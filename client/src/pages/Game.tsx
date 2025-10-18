@@ -107,6 +107,23 @@ export default function Game() {
 
   // 初始化游戏
   const initGame = () => {
+    // 重置所有游戏状态
+    setEnemies([]);
+    setBullets([]);
+    setParticles([]);
+    setScore(0);
+    setWave(1);
+    setKillCount(0);
+    setAcquiredSkills([]);
+    lastShotTimeRef.current = 0;
+    lastDamageTimeRef.current = 0;
+    setGameState("playing");
+  };
+
+  // 当游戏状态变为 playing 时初始化 canvas 和玩家
+  useEffect(() => {
+    if (gameState !== "playing") return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -135,17 +152,7 @@ export default function Game() {
     setPlayer(initialPlayer);
     playerRef.current = initialPlayer;
     mousePositionRef.current = { x: width / 2, y: height / 2 };
-    setEnemies([]);
-    setBullets([]);
-    setParticles([]);
-    setScore(0);
-    setWave(1);
-    setKillCount(0);
-    setAcquiredSkills([]);
-    lastShotTimeRef.current = 0;
-    lastDamageTimeRef.current = 0;
-    setGameState("playing");
-  };
+  }, [gameState]);
 
   // 生成敌人
   const spawnEnemy = () => {
