@@ -15,7 +15,13 @@ export interface Player {
   shield: number;
   maxShield: number;
   moveSpeed: number;
+  hasPierce: boolean;
+  hasLifeSteal: boolean;
+  bulletSizeMultiplier: number;
+  weapons: ActiveWeapon[];
 }
+
+export type EnemyType = 'swarm' | 'rusher' | 'shooter' | 'elite';
 
 export interface Enemy {
   x: number;
@@ -25,6 +31,9 @@ export interface Enemy {
   maxHealth: number;
   speed: number;
   angle: number;
+  type: EnemyType;
+  shootCooldown?: number;
+  lastShotTime?: number;
 }
 
 export interface Bullet {
@@ -34,6 +43,9 @@ export interface Bullet {
   vy: number;
   radius: number;
   damage: number;
+  pierce?: boolean;
+  pierceCount?: number;
+  isEnemyBullet?: boolean;
 }
 
 export interface Particle {
@@ -57,6 +69,24 @@ export interface DamageNumber {
 }
 
 export type GameState = "menu" | "playing" | "paused" | "levelup" | "gameover";
+
+export type WeaponType = 'orbital' | 'lightning' | 'field';
+
+export interface ActiveWeapon {
+  type: WeaponType;
+  level: number;
+  lastActivation: number;
+}
+
+export interface Joystick {
+  active: boolean;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+  angle: number;
+  distance: number;
+}
 
 export interface GameStats {
   score: number;

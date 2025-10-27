@@ -7,6 +7,9 @@ import { BackgroundRenderer } from "../utils/BackgroundRenderer";
 import { SpatialGrid } from "../utils/SpatialGrid";
 import { GameStorage } from "../utils/GameStorage";
 import { DamageNumberSystem } from "../utils/DamageNumbers";
+import { VirtualJoystick } from "../utils/VirtualJoystick";
+import { EnemyManager } from "../utils/EnemyManager";
+import { WeaponSystem } from "../utils/WeaponSystem";
 
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -26,6 +29,9 @@ export default function Game() {
   const backgroundRendererRef = useRef<BackgroundRenderer | null>(null);
   const spatialGridRef = useRef<SpatialGrid | null>(null);
   const damageNumbersRef = useRef<DamageNumberSystem>(new DamageNumberSystem());
+  const virtualJoystickRef = useRef<VirtualJoystick | null>(null);
+  const enemyManagerRef = useRef<EnemyManager>(new EnemyManager());
+  const weaponSystemRef = useRef<WeaponSystem>(new WeaponSystem(particlePoolRef.current));
 
   // 游戏状态
   const playerRef = useRef<Player>({
@@ -43,20 +49,35 @@ export default function Game() {
     shield: 0,
     maxShield: 0,
     moveSpeed: GAME_CONFIG.PLAYER.INITIAL_MOVE_SPEED,
+    hasPierce: false,
+    hasLifeSteal: false,
+    bulletSizeMultiplier: 1.0,
+    weapons: [],
   });
 
-  const enemiesRef = useRef<Enemy[]>([]);
   const bulletsRef = useRef<Bullet[]>([]);
+  const enemyBulletsRef = useRef<Bullet[]>([]);
   const lastShotTimeRef = useRef<number>(0);
   const lastDamageTimeRef = useRef<number>(0);
   const gameStartTimeRef = useRef<number>(0);
-  const mousePositionRef = useRef({ x: 0, y: 0 });
   const keysRef = useRef<Set<string>>(new Set());
 
   // 加载最高分
   useEffect(() => {
     const savedData = GameStorage.load();
     setStats((prev) => ({ ...prev, highScore: savedData.highScore }));
+  }, []);
+
+  // 初始化虚拟摇杆
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    virtualJoystickRef.current = new VirtualJoystick(canvas);
+
+    return () => {
+      virtualJoystickRef.current?.destroy();
+    };
   }, []);
 
   // 初始化游戏
@@ -92,14 +113,18 @@ export default function Game() {
       shield: 0,
       maxShield: 0,
       moveSpeed: GAME_CONFIG.PLAYER.INITIAL_MOVE_SPEED,
+      hasPierce: false,
+      hasLifeSteal: false,
+      bulletSizeMultiplier: 1.0,
+      weapons: [],
     };
 
     // 重置游戏状态
-    enemiesRef.current = [];
+    enemyManagerRef.current.reset();
     bulletsRef.current = [];
+    enemyBulletsRef.current = [];
     particlePoolRef.current.clear();
     damageNumbersRef.current.clear();
-    mousePositionRef.current = { x: width / 2, y: height / 2 };
     lastShotTimeRef.current = 0;
     lastDamageTimeRef.current = 0;
     gameStartTimeRef.current = Date.now();
@@ -115,55 +140,11 @@ export default function Game() {
     setGameState("playing");
   };
 
-  // 生成敌人
-  const spawnEnemy = (canvas: HTMLCanvasElement, killCount: number): Enemy => {
-    const side = Math.floor(Math.random() * 4);
-    const offset = GAME_CONFIG.ENEMY.SPAWN_OFFSET;
-    let x = 0,
-      y = 0;
-
-    switch (side) {
-      case 0:
-        x = Math.random() * canvas.width;
-        y = -offset;
-        break;
-      case 1:
-        x = canvas.width + offset;
-        y = Math.random() * canvas.height;
-        break;
-      case 2:
-        x = Math.random() * canvas.width;
-        y = canvas.height + offset;
-        break;
-      case 3:
-        x = -offset;
-        y = Math.random() * canvas.height;
-        break;
-    }
-
-    const baseHealth =
-      GAME_CONFIG.ENEMY.BASE_HEALTH +
-      Math.floor(killCount / 10) * GAME_CONFIG.ENEMY.HEALTH_INCREMENT_PER_10_KILLS;
-    const baseSpeed =
-      GAME_CONFIG.ENEMY.BASE_SPEED +
-      Math.floor(killCount / 20) * GAME_CONFIG.ENEMY.SPEED_INCREMENT_PER_20_KILLS;
-
-    return {
-      x,
-      y,
-      radius: GAME_CONFIG.ENEMY.RADIUS,
-      health: baseHealth,
-      maxHealth: baseHealth,
-      speed: Math.min(baseSpeed, GAME_CONFIG.ENEMY.MAX_SPEED),
-      angle: 0,
-    };
-  };
-
   // 升级
   const levelUp = () => {
     const availableSkills = SKILLS.filter((skill) => {
       if (
-        ["pierce_shot", "life_steal", "move_speed", "bullet_size"].includes(
+        ["pierce_shot", "life_steal", "move_speed", "bullet_size", "orbital_drone", "lightning_chain", "guardian_field"].includes(
           skill.id
         )
       ) {
@@ -208,12 +189,30 @@ export default function Game() {
         player.maxShield += GAME_CONFIG.SKILLS.SHIELD_BOOST;
         player.shield = player.maxShield;
         break;
+      case "pierce_shot":
+        player.hasPierce = true;
+        break;
+      case "life_steal":
+        player.hasLifeSteal = true;
+        break;
+      case "bullet_size":
+        player.bulletSizeMultiplier *= GAME_CONFIG.SKILLS.BULLET_SIZE_MULTIPLIER;
+        break;
       case "move_speed":
         player.moveSpeed *= GAME_CONFIG.SKILLS.MOVE_SPEED_MULTIPLIER;
         player.moveSpeed = Math.min(
           player.moveSpeed,
           GAME_CONFIG.PLAYER.MAX_MOVE_SPEED
         );
+        break;
+      case "orbital_drone":
+        weaponSystemRef.current.addWeapon(player, 'orbital');
+        break;
+      case "lightning_chain":
+        weaponSystemRef.current.addWeapon(player, 'lightning');
+        break;
+      case "guardian_field":
+        weaponSystemRef.current.addWeapon(player, 'field');
         break;
     }
 
@@ -250,40 +249,6 @@ export default function Game() {
     };
   }, [gameState]);
 
-  // 鼠标/触摸移动事件
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      mousePositionRef.current = {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-      };
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const touch = e.touches[0];
-      mousePositionRef.current = {
-        x: touch.clientX - rect.left,
-        y: touch.clientY - rect.top,
-      };
-    };
-
-    canvas.addEventListener("mousemove", handleMouseMove);
-    canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
-    canvas.addEventListener("touchstart", handleTouchMove, { passive: false });
-
-    return () => {
-      canvas.removeEventListener("mousemove", handleMouseMove);
-      canvas.removeEventListener("touchmove", handleTouchMove);
-      canvas.removeEventListener("touchstart", handleTouchMove);
-    };
-  }, []);
-
   // 游戏循环
   useEffect(() => {
     if (gameState !== "playing") return;
@@ -293,7 +258,6 @@ export default function Game() {
     if (!canvas || !ctx) return;
 
     let animationId: number;
-    let lastEnemySpawn = Date.now();
     let lastFrame = Date.now();
 
     const gameLoop = () => {
@@ -302,23 +266,30 @@ export default function Game() {
       lastFrame = now;
 
       const player = playerRef.current;
-      const enemies = enemiesRef.current;
+      const enemies = enemyManagerRef.current.getEnemies();
       const bullets = bulletsRef.current;
+      const enemyBullets = enemyBulletsRef.current;
       const particlePool = particlePoolRef.current;
       const spatialGrid = spatialGridRef.current!;
       const damageNumbers = damageNumbersRef.current;
+      const enemyManager = enemyManagerRef.current;
+      const weaponSystem = weaponSystemRef.current;
 
       // 更新存活时间
       const survivalTime = Math.floor((now - gameStartTimeRef.current) / 1000);
       setStats((prev) => ({ ...prev, survivalTime }));
 
-      // 绘制背景（使用离屏Canvas）
+      // 绘制背景
       backgroundRendererRef.current?.draw(ctx);
 
-      // 更新玩家位置（键盘控制）
+      // 更新玩家位置（虚拟摇杆 + 键盘控制）
+      const joystick = virtualJoystickRef.current?.getMovementVector() || { x: 0, y: 0 };
       const keys = keysRef.current;
-      let dx = 0,
-        dy = 0;
+      
+      let dx = joystick.x;
+      let dy = joystick.y;
+      
+      // 键盘控制（作为备选）
       if (keys.has("w") || keys.has("arrowup")) dy -= 1;
       if (keys.has("s") || keys.has("arrowdown")) dy += 1;
       if (keys.has("a") || keys.has("arrowleft")) dx -= 1;
@@ -326,509 +297,564 @@ export default function Game() {
 
       if (dx !== 0 || dy !== 0) {
         const length = Math.sqrt(dx * dx + dy * dy);
-        dx /= length;
-        dy /= length;
-        player.x += dx * player.moveSpeed * deltaTime;
-        player.y += dy * player.moveSpeed * deltaTime;
+        dx = (dx / length) * player.moveSpeed;
+        dy = (dy / length) * player.moveSpeed;
 
-        // 限制在画布内
         player.x = Math.max(
           player.radius,
-          Math.min(canvas.width - player.radius, player.x)
+          Math.min(canvas.width - player.radius, player.x + dx)
         );
         player.y = Math.max(
           player.radius,
-          Math.min(canvas.height - player.radius, player.y)
+          Math.min(canvas.height - player.radius, player.y + dy)
         );
       }
 
-      // 生成敌人
-      const enemySpawnInterval = Math.max(
-        GAME_CONFIG.ENEMY.INITIAL_SPAWN_INTERVAL -
-          Math.floor(stats.killCount / 10) *
-            GAME_CONFIG.ENEMY.SPAWN_INTERVAL_DECREASE_PER_10_KILLS,
-        GAME_CONFIG.ENEMY.MIN_SPAWN_INTERVAL
-      );
-      if (now - lastEnemySpawn > enemySpawnInterval) {
-        enemies.push(spawnEnemy(canvas, stats.killCount));
-        lastEnemySpawn = now;
-      }
+      // 生成敌人（基于时间）
+      enemyManager.spawnEnemy(canvas.width, canvas.height, now);
 
-      // 自动射击
-      const shootInterval = 1000 / player.attackSpeed;
-      if (now - lastShotTimeRef.current > shootInterval) {
-        lastShotTimeRef.current = now;
+      // 更新敌人
+      enemyManager.updateEnemies(player, deltaTime, canvas.width, canvas.height, now, enemyBullets);
 
-        const angleToMouse = Math.atan2(
-          mousePositionRef.current.y - player.y,
-          mousePositionRef.current.x - player.x
-        );
+      // 自动射击（向最近的敌人）
+      const shotInterval = 1000 / player.attackSpeed;
+      if (now - lastShotTimeRef.current > shotInterval && enemies.length > 0) {
+        // 找到最近的敌人
+        let nearestEnemy: Enemy | null = null;
+        let minDistance = player.attackRange;
 
-        const bulletSpeed = GAME_CONFIG.BULLET.SPEED;
-        const spreadAngle =
-          player.bulletCount > 1 ? GAME_CONFIG.BULLET.SPREAD_ANGLE : 0;
-        const bulletRadius = acquiredSkills.includes("bullet_size")
-          ? GAME_CONFIG.BULLET.ENLARGED_RADIUS
-          : GAME_CONFIG.BULLET.BASE_RADIUS;
+        for (const enemy of enemies) {
+          const dx = enemy.x - player.x;
+          const dy = enemy.y - player.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
 
-        for (let i = 0; i < player.bulletCount; i++) {
-          const offset =
-            player.bulletCount === 1
-              ? 0
-              : ((i - (player.bulletCount - 1) / 2) * spreadAngle) /
-                Math.max(player.bulletCount - 1, 1);
-          const angle = angleToMouse + offset;
+          if (distance < minDistance) {
+            minDistance = distance;
+            nearestEnemy = enemy;
+          }
+        }
 
-          bullets.push({
-            x: player.x,
-            y: player.y,
-            vx: Math.cos(angle) * bulletSpeed,
-            vy: Math.sin(angle) * bulletSpeed,
-            radius: bulletRadius,
-            damage: player.attackDamage,
-          });
+        if (nearestEnemy) {
+          const dx = nearestEnemy.x - player.x;
+          const dy = nearestEnemy.y - player.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const angle = Math.atan2(dy, dx);
+
+          // 发射多重子弹
+          for (let i = 0; i < player.bulletCount; i++) {
+            const spreadAngle =
+              player.bulletCount > 1
+                ? angle +
+                  GAME_CONFIG.BULLET.SPREAD_ANGLE *
+                    ((i - (player.bulletCount - 1) / 2) / (player.bulletCount - 1))
+                : angle;
+
+            const bulletRadius = player.bulletSizeMultiplier > 1
+              ? GAME_CONFIG.BULLET.ENLARGED_RADIUS * player.bulletSizeMultiplier
+              : GAME_CONFIG.BULLET.BASE_RADIUS;
+
+            bullets.push({
+              x: player.x,
+              y: player.y,
+              vx: Math.cos(spreadAngle) * GAME_CONFIG.BULLET.SPEED,
+              vy: Math.sin(spreadAngle) * GAME_CONFIG.BULLET.SPEED,
+              radius: bulletRadius,
+              damage: player.attackDamage,
+              pierce: player.hasPierce,
+              pierceCount: player.hasPierce ? 999 : 1,
+            });
+          }
+
+          lastShotTimeRef.current = now;
         }
       }
 
-      // 更新粒子
-      particlePool.update(deltaTime);
-
-      // 更新伤害数字
-      damageNumbers.update(deltaTime);
-
-      // 更新并绘制子弹
+      // 更新子弹
       for (let i = bullets.length - 1; i >= 0; i--) {
         const bullet = bullets[i];
-        bullet.x += bullet.vx * deltaTime;
-        bullet.y += bullet.vy * deltaTime;
+        bullet.x += bullet.vx;
+        bullet.y += bullet.vy;
 
-        // 移除屏幕外的子弹
         if (
-          bullet.x < -20 ||
-          bullet.x > canvas.width + 20 ||
-          bullet.y < -20 ||
-          bullet.y > canvas.height + 20
+          bullet.x < -50 ||
+          bullet.x > canvas.width + 50 ||
+          bullet.y < -50 ||
+          bullet.y > canvas.height + 50
         ) {
           bullets.splice(i, 1);
-          continue;
         }
-
-        // 绘制子弹光晕
-        const gradient = ctx.createRadialGradient(
-          bullet.x,
-          bullet.y,
-          0,
-          bullet.x,
-          bullet.y,
-          bullet.radius * 2
-        );
-        gradient.addColorStop(0, GAME_CONFIG.COLORS.BULLET_GRADIENT_START);
-        gradient.addColorStop(0.5, GAME_CONFIG.COLORS.BULLET_GRADIENT_END);
-        gradient.addColorStop(1, "rgba(245, 158, 11, 0)");
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(bullet.x, bullet.y, bullet.radius * 2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // 绘制子弹核心
-        ctx.fillStyle = GAME_CONFIG.COLORS.BULLET_CORE;
-        ctx.beginPath();
-        ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
-        ctx.fill();
       }
 
-      // 构建空间网格
+      // 更新敌人子弹
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const bullet = enemyBullets[i];
+        bullet.x += bullet.vx;
+        bullet.y += bullet.vy;
+
+        if (
+          bullet.x < -50 ||
+          bullet.x > canvas.width + 50 ||
+          bullet.y < -50 ||
+          bullet.y > canvas.height + 50
+        ) {
+          enemyBullets.splice(i, 1);
+        }
+      }
+
+      // 更新武器系统
+      weaponSystem.updateWeapons(player, enemies, now, ctx);
+
+      // 碰撞检测（使用空间网格）
       spatialGrid.clear();
-      for (const enemy of enemies) {
-        spatialGrid.insert(enemy);
-      }
+      enemies.forEach((e) => spatialGrid.insert(e.x, e.y, e));
 
-      // 碰撞检测：子弹与敌人（使用空间分区优化）
+      // 子弹与敌人碰撞
       for (let i = bullets.length - 1; i >= 0; i--) {
         const bullet = bullets[i];
-        let bulletRemoved = false;
+        const nearbyEnemies = spatialGrid.query(
+          bullet.x - 50,
+          bullet.y - 50,
+          bullet.x + 50,
+          bullet.y + 50
+        );
 
-        spatialGrid.checkBulletCollisions(bullet, (enemy) => {
-          if (bulletRemoved && !acquiredSkills.includes("pierce_shot")) return;
+        let hit = false;
+        for (const enemy of nearbyEnemies) {
+          const dx = bullet.x - enemy.x;
+          const dy = bullet.y - enemy.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
 
-          enemy.health -= bullet.damage;
-          damageNumbers.add(enemy.x, enemy.y, bullet.damage);
-          particlePool.createExplosion(
-            enemy.x,
-            enemy.y,
-            GAME_CONFIG.COLORS.PARTICLE_ENEMY_HIT,
-            GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT,
-            GAME_CONFIG.PARTICLE.BASE_SPEED,
-            GAME_CONFIG.PARTICLE.BASE_LIFE,
-            GAME_CONFIG.PARTICLE.BASE_RADIUS
-          );
+          if (distance < bullet.radius + enemy.radius) {
+            enemy.health -= bullet.damage;
+            damageNumbers.add(enemy.x, enemy.y, bullet.damage);
 
-          if (!acquiredSkills.includes("pierce_shot") && !bulletRemoved) {
-            bullets.splice(i, 1);
-            bulletRemoved = true;
+            particlePool.createParticles(
+              enemy.x,
+              enemy.y,
+              GAME_CONFIG.COLORS.PARTICLE_ENEMY_HIT,
+              GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT
+            );
+
+            if (bullet.pierce && bullet.pierceCount) {
+              bullet.pierceCount--;
+              if (bullet.pierceCount <= 0) {
+                hit = true;
+              }
+            } else {
+              hit = true;
+            }
+
+            if (hit) break;
           }
-        });
+        }
+
+        if (hit) {
+          bullets.splice(i, 1);
+        }
       }
 
-      // 更新并绘制敌人
+      // 敌人子弹与玩家碰撞
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const bullet = enemyBullets[i];
+        const dx = bullet.x - player.x;
+        const dy = bullet.y - player.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < bullet.radius + player.radius) {
+          // 玩家受伤
+          if (now - lastDamageTimeRef.current > GAME_CONFIG.PLAYER.DAMAGE_COOLDOWN) {
+            if (player.shield > 0) {
+              player.shield -= bullet.damage;
+              if (player.shield < 0) {
+                player.health += player.shield;
+                player.shield = 0;
+              }
+            } else {
+              player.health -= bullet.damage;
+            }
+
+            lastDamageTimeRef.current = now;
+            particlePool.createParticles(
+              player.x,
+              player.y,
+              GAME_CONFIG.COLORS.PARTICLE_PLAYER_HIT,
+              GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT
+            );
+          }
+
+          enemyBullets.splice(i, 1);
+        }
+      }
+
+      // 玩家与敌人碰撞
+      for (const enemy of enemies) {
+        const dx = player.x - enemy.x;
+        const dy = player.y - enemy.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < player.radius + enemy.radius) {
+          if (now - lastDamageTimeRef.current > GAME_CONFIG.PLAYER.DAMAGE_COOLDOWN) {
+            const typeConfig = GAME_CONFIG.ENEMY.TYPES[enemy.type];
+            const damage = typeConfig.damage;
+
+            if (player.shield > 0) {
+              player.shield -= damage;
+              if (player.shield < 0) {
+                player.health += player.shield;
+                player.shield = 0;
+              }
+            } else {
+              player.health -= damage;
+            }
+
+            lastDamageTimeRef.current = now;
+            particlePool.createParticles(
+              player.x,
+              player.y,
+              GAME_CONFIG.COLORS.PARTICLE_PLAYER_HIT,
+              GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT
+            );
+          }
+        }
+      }
+
+      // 移除死亡敌人并计算经验
+      let killCount = 0;
       for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
-
-        // 检查敌人是否死亡
         if (enemy.health <= 0) {
-          enemies.splice(i, 1);
-          setStats((prev) => ({
-            ...prev,
-            score: prev.score + GAME_CONFIG.LEVELING.SCORE_PER_KILL,
-            killCount: prev.killCount + 1,
-          }));
+          killCount++;
+          player.exp += GAME_CONFIG.LEVELING.EXP_PER_KILL;
 
-          particlePool.createExplosion(
-            enemy.x,
-            enemy.y,
-            GAME_CONFIG.COLORS.PARTICLE_ENEMY_HIT,
-            GAME_CONFIG.PARTICLE.DEATH_PARTICLE_COUNT,
-            GAME_CONFIG.PARTICLE.BASE_SPEED,
-            GAME_CONFIG.PARTICLE.BASE_LIFE,
-            GAME_CONFIG.PARTICLE.BASE_RADIUS
-          );
-
-          // 生命汲取
-          if (acquiredSkills.includes("life_steal")) {
+          if (player.hasLifeSteal) {
             player.health = Math.min(
               player.health + GAME_CONFIG.SKILLS.LIFE_STEAL_AMOUNT,
               player.maxHealth
             );
           }
 
-          // 经验和升级
-          player.exp += GAME_CONFIG.LEVELING.EXP_PER_KILL;
-          const expNeeded =
-            player.level * GAME_CONFIG.LEVELING.EXP_MULTIPLIER_PER_LEVEL;
-          if (player.exp >= expNeeded) {
-            player.exp -= expNeeded;
-            player.level += 1;
-            setTimeout(() => levelUp(), 0);
-          }
-          continue;
+          particlePool.createParticles(
+            enemy.x,
+            enemy.y,
+            enemyManager.getEnemyColor(enemy.type),
+            GAME_CONFIG.PARTICLE.DEATH_PARTICLE_COUNT
+          );
         }
-
-        // 移动敌人
-        const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
-        enemy.x += Math.cos(angle) * enemy.speed * deltaTime;
-        enemy.y += Math.sin(angle) * enemy.speed * deltaTime;
-        enemy.angle = angle;
-
-        // 绘制敌人阴影
-        ctx.fillStyle = GAME_CONFIG.COLORS.SHADOW;
-        ctx.beginPath();
-        ctx.arc(enemy.x + 2, enemy.y + 2, enemy.radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        // 绘制敌人身体
-        const gradient = ctx.createRadialGradient(
-          enemy.x,
-          enemy.y,
-          0,
-          enemy.x,
-          enemy.y,
-          enemy.radius
-        );
-        gradient.addColorStop(0, GAME_CONFIG.COLORS.ENEMY_GRADIENT_START);
-        gradient.addColorStop(1, GAME_CONFIG.COLORS.ENEMY_GRADIENT_END);
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        // 绘制敌人眼睛
-        const eyeOffset = 4;
-        ctx.fillStyle = GAME_CONFIG.COLORS.ENEMY_EYE;
-        ctx.beginPath();
-        ctx.arc(enemy.x - eyeOffset, enemy.y - 3, 2, 0, Math.PI * 2);
-        ctx.arc(enemy.x + eyeOffset, enemy.y - 3, 2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // 绘制血条
-        const barWidth =
-          enemy.radius * GAME_CONFIG.RENDERING.HEALTH_BAR_WIDTH_MULTIPLIER;
-        const barHeight = GAME_CONFIG.RENDERING.HEALTH_BAR_HEIGHT;
-        const barX = enemy.x - barWidth / 2;
-        const barY =
-          enemy.y - enemy.radius - GAME_CONFIG.RENDERING.HEALTH_BAR_OFFSET;
-
-        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-        ctx.fillRect(barX, barY, barWidth, barHeight);
-
-        const healthPercent = enemy.health / enemy.maxHealth;
-        const healthColor =
-          healthPercent > 0.5
-            ? "#22c55e"
-            : healthPercent > 0.25
-            ? "#eab308"
-            : "#ef4444";
-        ctx.fillStyle = healthColor;
-        ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
       }
 
-      // 碰撞检测：敌人与玩家（使用空间分区优化）
-      if (now - lastDamageTimeRef.current > GAME_CONFIG.PLAYER.DAMAGE_COOLDOWN) {
-        spatialGrid.checkPlayerCollisions(
-          player.x,
-          player.y,
-          player.radius,
-          (enemy) => {
-            lastDamageTimeRef.current = now;
+      enemyManager.removeDeadEnemies();
 
-            let damage = GAME_CONFIG.ENEMY.DAMAGE_TO_PLAYER;
-            if (player.shield > 0) {
-              const shieldDamage = Math.min(player.shield, damage);
-              player.shield -= shieldDamage;
-              damage -= shieldDamage;
-            }
-            player.health -= damage;
-
-            particlePool.createExplosion(
-              player.x,
-              player.y,
-              GAME_CONFIG.COLORS.PARTICLE_PLAYER_HIT,
-              5,
-              GAME_CONFIG.PARTICLE.BASE_SPEED,
-              GAME_CONFIG.PARTICLE.BASE_LIFE,
-              GAME_CONFIG.PARTICLE.BASE_RADIUS
-            );
-
-            if (player.health <= 0) {
-              const newRecord = GameStorage.recordGameEnd(
-                stats.score,
-                stats.killCount,
-                survivalTime
-              );
-              setIsNewRecord(newRecord);
-              if (newRecord) {
-                setStats((prev) => ({ ...prev, highScore: stats.score }));
-              }
-              setGameState("gameover");
-              return;
-            }
-          }
-        );
+      if (killCount > 0) {
+        setStats((prev) => ({
+          ...prev,
+          killCount: prev.killCount + killCount,
+          score: prev.score + killCount * GAME_CONFIG.LEVELING.SCORE_PER_KILL,
+        }));
       }
 
-      // 绘制玩家阴影
-      ctx.fillStyle = GAME_CONFIG.COLORS.SHADOW;
-      ctx.beginPath();
-      ctx.arc(player.x + 2, player.y + 2, player.radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // 绘制玩家身体
-      const playerGradient = ctx.createRadialGradient(
-        player.x,
-        player.y,
-        0,
-        player.x,
-        player.y,
-        player.radius
-      );
-      playerGradient.addColorStop(0, GAME_CONFIG.COLORS.PLAYER_GRADIENT_START);
-      playerGradient.addColorStop(1, GAME_CONFIG.COLORS.PLAYER_GRADIENT_END);
-      ctx.fillStyle = playerGradient;
-      ctx.beginPath();
-      ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // 绘制玩家护盾
-      if (player.shield > 0) {
-        const shieldAlpha = Math.min(player.shield / player.maxShield, 1) * 0.5;
-        ctx.strokeStyle = `rgba(96, 165, 250, ${shieldAlpha})`;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(
-          player.x,
-          player.y,
-          player.radius + GAME_CONFIG.RENDERING.SHIELD_RADIUS_OFFSET,
-          0,
-          Math.PI * 2
-        );
-        ctx.stroke();
+      // 检查升级
+      const expRequired =
+        GAME_CONFIG.LEVELING.EXP_MULTIPLIER_PER_LEVEL * player.level;
+      if (player.exp >= expRequired) {
+        player.exp -= expRequired;
+        player.level++;
+        levelUp();
       }
 
-      // 绘制玩家准星
-      const aimAngle = Math.atan2(
-        mousePositionRef.current.y - player.y,
-        mousePositionRef.current.x - player.x
-      );
-      const aimDistance = GAME_CONFIG.RENDERING.AIM_INDICATOR_DISTANCE;
-      const aimX = player.x + Math.cos(aimAngle) * aimDistance;
-      const aimY = player.y + Math.sin(aimAngle) * aimDistance;
+      // 检查游戏结束
+      if (player.health <= 0) {
+        const finalScore = stats.score + killCount * GAME_CONFIG.LEVELING.SCORE_PER_KILL;
+        const savedData = GameStorage.load();
+        
+        if (finalScore > savedData.highScore) {
+          GameStorage.save({ highScore: finalScore });
+          setIsNewRecord(true);
+        }
+        
+        setStats((prev) => ({
+          ...prev,
+          score: finalScore,
+          highScore: Math.max(finalScore, savedData.highScore),
+        }));
+        
+        setGameState("gameover");
+        return;
+      }
 
-      ctx.strokeStyle = GAME_CONFIG.COLORS.AIM_INDICATOR;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(player.x, player.y);
-      ctx.lineTo(aimX, aimY);
-      ctx.stroke();
+      // 更新粒子
+      particlePool.update();
 
-      ctx.fillStyle = GAME_CONFIG.COLORS.AIM_INDICATOR;
-      ctx.beginPath();
-      ctx.arc(
-        aimX,
-        aimY,
-        GAME_CONFIG.RENDERING.AIM_INDICATOR_RADIUS,
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
+      // 更新伤害数字
+      damageNumbers.update();
 
-      // 绘制粒子效果
-      particlePool.render(ctx);
-
-      // 绘制伤害数字
-      damageNumbers.render(ctx);
+      // 渲染
+      renderGame(ctx, player, enemies, bullets, enemyBullets, particlePool, damageNumbers, weaponSystem, now);
 
       animationId = requestAnimationFrame(gameLoop);
     };
 
-    gameLoop();
+    animationId = requestAnimationFrame(gameLoop);
 
     return () => {
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-      }
+      cancelAnimationFrame(animationId);
     };
-  }, [gameState, acquiredSkills, stats.killCount]);
+  }, [gameState, stats.score]);
 
-  const player = playerRef.current;
+  // 渲染函数
+  const renderGame = (
+    ctx: CanvasRenderingContext2D,
+    player: Player,
+    enemies: Enemy[],
+    bullets: Bullet[],
+    enemyBullets: Bullet[],
+    particlePool: ParticlePool,
+    damageNumbers: DamageNumberSystem,
+    weaponSystem: WeaponSystem,
+    currentTime: number
+  ) => {
+    const canvas = ctx.canvas;
+
+    // 渲染武器（在玩家下方）
+    weaponSystem.renderWeapons(player, ctx, currentTime);
+
+    // 渲染敌人
+    const enemyManager = enemyManagerRef.current;
+    for (const enemy of enemies) {
+      const shape = enemyManager.getEnemyShape(enemy.type);
+      const color = enemyManager.getEnemyColor(enemy.type);
+
+      ctx.save();
+      ctx.translate(enemy.x, enemy.y);
+
+      // 绘制形状
+      ctx.beginPath();
+      switch (shape) {
+        case 'circle':
+          ctx.arc(0, 0, enemy.radius, 0, Math.PI * 2);
+          break;
+        case 'square':
+          ctx.rect(-enemy.radius, -enemy.radius, enemy.radius * 2, enemy.radius * 2);
+          break;
+        case 'triangle':
+          ctx.moveTo(0, -enemy.radius);
+          ctx.lineTo(enemy.radius, enemy.radius);
+          ctx.lineTo(-enemy.radius, enemy.radius);
+          ctx.closePath();
+          break;
+        case 'hexagon':
+          for (let i = 0; i < 6; i++) {
+            const angle = (i / 6) * Math.PI * 2;
+            const x = Math.cos(angle) * enemy.radius;
+            const y = Math.sin(angle) * enemy.radius;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.closePath();
+          break;
+      }
+
+      const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, enemy.radius);
+      gradient.addColorStop(0, color);
+      gradient.addColorStop(1, color + '88');
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.restore();
+
+      // 血条
+      if (enemy.health < enemy.maxHealth) {
+        const barWidth = enemy.radius * 2;
+        const barHeight = 3;
+        const barY = enemy.y - enemy.radius - 8;
+
+        ctx.fillStyle = "#333";
+        ctx.fillRect(enemy.x - barWidth / 2, barY, barWidth, barHeight);
+
+        ctx.fillStyle = color;
+        ctx.fillRect(
+          enemy.x - barWidth / 2,
+          barY,
+          (enemy.health / enemy.maxHealth) * barWidth,
+          barHeight
+        );
+      }
+    }
+
+    // 渲染玩家子弹
+    for (const bullet of bullets) {
+      const gradient = ctx.createRadialGradient(
+        bullet.x,
+        bullet.y,
+        0,
+        bullet.x,
+        bullet.y,
+        bullet.radius
+      );
+      gradient.addColorStop(0, GAME_CONFIG.COLORS.BULLET_CORE);
+      gradient.addColorStop(0.5, GAME_CONFIG.COLORS.BULLET_GRADIENT_START);
+      gradient.addColorStop(1, GAME_CONFIG.COLORS.BULLET_GRADIENT_END);
+
+      ctx.beginPath();
+      ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(bullet.x, bullet.y, bullet.radius + 2, 0, Math.PI * 2);
+      ctx.strokeStyle = GAME_CONFIG.COLORS.BULLET_GRADIENT_START + "44";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // 渲染敌人子弹
+    for (const bullet of enemyBullets) {
+      ctx.beginPath();
+      ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+      ctx.fillStyle = "#a855f7";
+      ctx.fill();
+      ctx.strokeStyle = "#7c3aed";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // 渲染玩家
+    const gradient = ctx.createRadialGradient(
+      player.x,
+      player.y,
+      0,
+      player.x,
+      player.y,
+      player.radius
+    );
+    gradient.addColorStop(0, GAME_CONFIG.COLORS.PLAYER_GRADIENT_START);
+    gradient.addColorStop(1, GAME_CONFIG.COLORS.PLAYER_GRADIENT_END);
+
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // 护盾
+    if (player.shield > 0) {
+      ctx.beginPath();
+      ctx.arc(
+        player.x,
+        player.y,
+        player.radius + GAME_CONFIG.RENDERING.SHIELD_RADIUS_OFFSET,
+        0,
+        Math.PI * 2
+      );
+      ctx.strokeStyle = GAME_CONFIG.COLORS.SHIELD;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    // 玩家血条
+    const barWidth = player.radius * GAME_CONFIG.RENDERING.HEALTH_BAR_WIDTH_MULTIPLIER;
+    const barHeight = GAME_CONFIG.RENDERING.HEALTH_BAR_HEIGHT;
+    const barY = player.y - player.radius - GAME_CONFIG.RENDERING.HEALTH_BAR_OFFSET;
+
+    ctx.fillStyle = "#333";
+    ctx.fillRect(player.x - barWidth / 2, barY, barWidth, barHeight);
+
+    ctx.fillStyle = "#10b981";
+    ctx.fillRect(
+      player.x - barWidth / 2,
+      barY,
+      (player.health / player.maxHealth) * barWidth,
+      barHeight
+    );
+
+    // 渲染粒子
+    particlePool.render(ctx);
+
+    // 渲染伤害数字
+    damageNumbers.render(ctx);
+
+    // 渲染虚拟摇杆
+    virtualJoystickRef.current?.render(ctx);
+
+    // 渲染 HUD
+    ctx.save();
+    ctx.fillStyle = "#fff";
+    ctx.font = "16px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText(`HP: ${Math.max(0, Math.floor(player.health))}/${player.maxHealth}`, 10, 25);
+    
+    if (player.shield > 0) {
+      ctx.fillStyle = "#60a5fa";
+      ctx.fillText(`Shield: ${Math.floor(player.shield)}/${player.maxShield}`, 10, 45);
+    }
+
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.fillText(
+      `Time: ${Math.floor(stats.survivalTime / 60)}:${(stats.survivalTime % 60).toString().padStart(2, "0")}`,
+      canvas.width / 2,
+      25
+    );
+
+    ctx.textAlign = "right";
+    ctx.fillText(`Kills: ${stats.killCount}`, canvas.width - 10, 25);
+    ctx.fillText(`Level: ${player.level}`, canvas.width - 10, 45);
+
+    // 经验条
+    const expRequired = GAME_CONFIG.LEVELING.EXP_MULTIPLIER_PER_LEVEL * player.level;
+    const expProgress = player.exp / expRequired;
+    const expBarHeight = 5;
+
+    ctx.fillStyle = "#333";
+    ctx.fillRect(0, canvas.height - expBarHeight, canvas.width, expBarHeight);
+
+    ctx.fillStyle = "#fbbf24";
+    ctx.fillRect(0, canvas.height - expBarHeight, canvas.width * expProgress, expBarHeight);
+
+    ctx.restore();
+  };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-2 sm:p-4">
-      <div className="mb-2 sm:mb-4 text-white text-center">
-        <h1 className="text-2xl sm:text-3xl font-bold mb-1 sm:mb-2 bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
-          异星幸存者
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-400">
-          使用 WASD 或方向键移动，鼠标控制瞄准，ESC 暂停
-        </p>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 p-4">
+      <div className="mb-4 text-center">
+        <h1 className="text-4xl font-bold text-white mb-2">异星幸存者</h1>
+        <p className="text-slate-400">Alien Survivor</p>
       </div>
 
-      {gameState === "menu" && (
-        <div className="bg-slate-800/90 backdrop-blur-sm p-6 sm:p-8 rounded-lg text-white text-center max-w-md border border-slate-700">
-          <h2 className="text-xl sm:text-2xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
-            游戏说明
-          </h2>
-          <div className="text-left space-y-2 mb-4 text-xs sm:text-sm">
-            <p>🌍 你的星球已毁灭,被派往异星寻找新家园</p>
-            <p>👾 击败不断涌现的怪物，获取经验升级</p>
-            <p>⚡ 每次升级可选择一种技能强化自己</p>
-            <p>⌨️ WASD/方向键移动，鼠标控制瞄准</p>
-            <p>⏸️ ESC键暂停游戏</p>
-            <p>🔫 自动射击，尽可能存活更久！</p>
-          </div>
-          {stats.highScore > 0 && (
-            <div className="mb-4 p-3 bg-slate-700/50 rounded">
-              <p className="text-sm text-yellow-400">
-                🏆 最高分: {stats.highScore}
-              </p>
-            </div>
-          )}
-          <Button
-            onClick={initGame}
-            className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
-          >
-            开始游戏
-          </Button>
-        </div>
-      )}
+      <div className="relative">
+        <canvas
+          ref={canvasRef}
+          className="border-2 border-slate-700 rounded-lg shadow-2xl"
+          style={{ touchAction: "none" }}
+        />
 
-      {gameState === "playing" && (
-        <>
-          <div className="mb-2 flex gap-2 sm:gap-4 text-white text-xs sm:text-sm font-semibold">
-            <div className="bg-slate-800/80 px-2 sm:px-3 py-1 rounded">
-              等级 {player.level}
-            </div>
-            <div className="bg-slate-800/80 px-2 sm:px-3 py-1 rounded">
-              分数 {stats.score}
-            </div>
-            <div className="bg-slate-800/80 px-2 sm:px-3 py-1 rounded">
-              击杀 {stats.killCount}
-            </div>
-            <div className="bg-slate-800/80 px-2 sm:px-3 py-1 rounded">
-              时间 {stats.survivalTime}s
-            </div>
-          </div>
-          <div className="mb-2 w-full max-w-[600px] space-y-1">
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <div className="text-xs text-white mb-1 font-semibold">
-                  生命值 {Math.max(0, Math.floor(player.health))}/
-                  {player.maxHealth}
-                </div>
-                <div className="bg-slate-800 h-3 sm:h-4 rounded-full overflow-hidden border border-slate-700">
-                  <div
-                    className="bg-gradient-to-r from-green-500 to-emerald-400 h-full transition-all duration-300"
-                    style={{
-                      width: `${Math.max(0, (player.health / player.maxHealth) * 100)}%`,
-                    }}
-                  />
-                </div>
-              </div>
-              {player.maxShield > 0 && (
-                <div className="flex-1">
-                  <div className="text-xs text-white mb-1 font-semibold">
-                    护盾 {Math.max(0, Math.floor(player.shield))}/
-                    {player.maxShield}
-                  </div>
-                  <div className="bg-slate-800 h-3 sm:h-4 rounded-full overflow-hidden border border-slate-700">
-                    <div
-                      className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full transition-all duration-300"
-                      style={{
-                        width: `${Math.max(0, (player.shield / player.maxShield) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-            <div>
-              <div className="text-xs text-white mb-1 font-semibold">
-                经验值 {player.exp} / {player.level * 50}
-              </div>
-              <div className="bg-slate-800 h-2 rounded-full overflow-hidden border border-slate-700">
-                <div
-                  className="bg-gradient-to-r from-yellow-500 to-orange-400 h-full transition-all duration-300"
-                  style={{ width: `${(player.exp / (player.level * 50)) * 100}%` }}
-                />
+        {gameState === "menu" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 rounded-lg">
+            <h2 className="text-3xl font-bold text-white mb-8">准备开始</h2>
+            <div className="space-y-4">
+              <Button onClick={initGame} size="lg" className="w-48">
+                开始游戏
+              </Button>
+              <div className="text-center text-slate-300">
+                <p>最高分: {stats.highScore}</p>
               </div>
             </div>
+            <div className="mt-8 text-slate-400 text-sm text-center max-w-md">
+              <p>• 使用虚拟摇杆或 WASD 移动</p>
+              <p>• 自动攻击最近的敌人</p>
+              <p>• 升级选择技能强化自己</p>
+              <p>• 尽可能存活更久！</p>
+            </div>
           </div>
-          <canvas
-            ref={canvasRef}
-            className="border-4 border-slate-700 rounded-lg touch-none shadow-2xl"
-          />
-          <div className="mt-2 text-xs text-slate-400">
-            攻击: {player.attackDamage} | 攻速: {player.attackSpeed.toFixed(1)}{" "}
-            | 子弹: {player.bulletCount} | 移速: {player.moveSpeed.toFixed(1)}
-          </div>
-        </>
-      )}
+        )}
 
-      {gameState === "paused" && (
-        <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4 z-10">
-          <div className="bg-slate-800/95 backdrop-blur-sm p-6 sm:p-8 rounded-lg text-white text-center max-w-md border-2 border-blue-500/50">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-cyan-500 bg-clip-text text-transparent">
-              游戏暂停
-            </h2>
-            <p className="text-slate-300 mb-6">按 ESC 键继续游戏</p>
-            <div className="space-y-2 text-sm text-slate-400">
-              <p>当前分数: {stats.score}</p>
-              <p>当前等级: {player.level}</p>
-              <p>存活时间: {stats.survivalTime}秒</p>
-            </div>
-            <div className="mt-6 space-y-2">
-              <Button
-                onClick={() => setGameState("playing")}
-                className="w-full bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700"
-              >
+        {gameState === "paused" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 rounded-lg">
+            <h2 className="text-3xl font-bold text-white mb-8">游戏暂停</h2>
+            <div className="space-y-4">
+              <Button onClick={() => setGameState("playing")} size="lg" className="w-48">
                 继续游戏
               </Button>
               <Button
@@ -836,86 +862,73 @@ export default function Game() {
                   setGameState("menu");
                 }}
                 variant="outline"
-                className="w-full"
+                size="lg"
+                className="w-48"
               >
                 返回菜单
               </Button>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {gameState === "levelup" && (
-        <div className="absolute inset-0 bg-black/90 flex items-center justify-center p-4 z-10">
-          <div className="bg-slate-800/95 backdrop-blur-sm p-6 sm:p-8 rounded-lg text-white max-w-md border-2 border-yellow-500/50">
-            <h2 className="text-2xl sm:text-3xl font-bold mb-2 text-center bg-gradient-to-r from-yellow-400 to-orange-500 bg-clip-text text-transparent">
-              升级！
-            </h2>
-            <p className="text-center mb-6 text-slate-300">选择一项技能强化</p>
-            <div className="space-y-3">
+        {gameState === "levelup" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 rounded-lg">
+            <h2 className="text-3xl font-bold text-white mb-8">升级！</h2>
+            <div className="space-y-4 w-full max-w-md px-4">
               {skillOptions.map((skill) => (
                 <Button
                   key={skill.id}
                   onClick={() => selectSkill(skill)}
-                  className="w-full text-left justify-start h-auto py-3 px-4 bg-slate-700 hover:bg-gradient-to-r hover:from-blue-600 hover:to-purple-600 border border-slate-600 hover:border-transparent transition-all"
                   variant="outline"
+                  size="lg"
+                  className="w-full text-left justify-start h-auto py-4"
                 >
                   <div>
-                    <div className="font-bold text-base">{skill.name}</div>
-                    <div className="text-xs text-slate-400">
-                      {skill.description}
-                    </div>
+                    <div className="font-bold text-lg">{skill.name}</div>
+                    <div className="text-sm text-slate-400">{skill.description}</div>
                   </div>
                 </Button>
               ))}
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {gameState === "gameover" && (
-        <div className="absolute inset-0 bg-black/90 flex items-center justify-center p-4 z-10">
-          <div className="bg-slate-800/95 backdrop-blur-sm p-6 sm:p-8 rounded-lg text-white text-center max-w-md border-2 border-red-500/50">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4 bg-gradient-to-r from-red-500 to-orange-600 bg-clip-text text-transparent">
-              游戏结束
-            </h2>
+        {gameState === "gameover" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 rounded-lg">
+            <h2 className="text-4xl font-bold text-red-500 mb-4">游戏结束</h2>
             {isNewRecord && (
-              <div className="mb-4 p-3 bg-yellow-500/20 border-2 border-yellow-500 rounded-lg animate-pulse">
-                <p className="text-xl font-bold text-yellow-400">
-                  🎉 新纪录！🎉
-                </p>
-              </div>
+              <p className="text-2xl text-yellow-400 mb-4">🎉 新纪录！</p>
             )}
-            <div className="space-y-2 mb-6 text-sm sm:text-base">
-              <p className="text-xl sm:text-2xl font-bold text-yellow-400">
-                最终分数: {stats.score}
-              </p>
+            <div className="text-white text-xl mb-8 space-y-2">
+              <p>得分: {stats.score}</p>
+              <p>击杀: {stats.killCount}</p>
               <p>
-                达到等级: <span className="font-bold text-blue-400">{player.level}</span>
+                生存时间: {Math.floor(stats.survivalTime / 60)}:
+                {(stats.survivalTime % 60).toString().padStart(2, "0")}
               </p>
-              <p>
-                击杀数量:{" "}
-                <span className="font-bold text-red-400">{stats.killCount}</span>
-              </p>
-              <p>
-                存活时间:{" "}
-                <span className="font-bold text-green-400">
-                  {stats.survivalTime}秒
-                </span>
-              </p>
-              <p className="text-xs text-slate-400 mt-4">
-                历史最高分: {stats.highScore}
-              </p>
+              <p>等级: {playerRef.current.level}</p>
+              <p className="text-slate-400">最高分: {stats.highScore}</p>
             </div>
-            <Button
-              onClick={initGame}
-              className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
-            >
-              重新开始
-            </Button>
+            <div className="space-y-4">
+              <Button onClick={initGame} size="lg" className="w-48">
+                再来一局
+              </Button>
+              <Button
+                onClick={() => setGameState("menu")}
+                variant="outline"
+                size="lg"
+                className="w-48"
+              >
+                返回菜单
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      <div className="mt-4 text-slate-500 text-sm">
+        按 ESC 暂停游戏
+      </div>
     </div>
   );
 }

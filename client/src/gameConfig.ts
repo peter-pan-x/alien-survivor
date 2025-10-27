@@ -20,6 +20,15 @@ export const GAME_CONFIG = {
     DAMAGE_COOLDOWN: 500, // 受伤无敌时间（毫秒）
   },
 
+  // 虚拟摇杆配置
+  JOYSTICK: {
+    OUTER_RADIUS: 70,
+    INNER_RADIUS: 35,
+    MAX_DISTANCE: 56, // 外圈半径的 80%
+    OPACITY: 0.6,
+    COLOR: '#60a5fa',
+  },
+
   // 敌人属性
   ENEMY: {
     RADIUS: 12,
@@ -33,6 +42,39 @@ export const GAME_CONFIG = {
     MIN_SPAWN_INTERVAL: 400,
     SPAWN_INTERVAL_DECREASE_PER_10_KILLS: 100,
     DAMAGE_TO_PLAYER: 5,
+    // 不同类型敌人的配置
+    TYPES: {
+      swarm: {
+        radius: 8,
+        healthMultiplier: 0.5,
+        speedMultiplier: 0.7,
+        damage: 3,
+        spawnWeight: 0.5,
+      },
+      rusher: {
+        radius: 12,
+        healthMultiplier: 1.0,
+        speedMultiplier: 1.0,
+        damage: 5,
+        spawnWeight: 0.3,
+      },
+      shooter: {
+        radius: 10,
+        healthMultiplier: 0.8,
+        speedMultiplier: 0.6,
+        damage: 4,
+        shootCooldown: 2000,
+        shootRange: 250,
+        spawnWeight: 0.15,
+      },
+      elite: {
+        radius: 18,
+        healthMultiplier: 3.0,
+        speedMultiplier: 0.5,
+        damage: 8,
+        spawnWeight: 0.05,
+      },
+    },
   },
 
   // 子弹属性
@@ -72,6 +114,28 @@ export const GAME_CONFIG = {
     LIFE_STEAL_AMOUNT: 5,
   },
 
+  // 新武器系统配置
+  WEAPONS: {
+    ORBITAL: {
+      BASE_DAMAGE: 8,
+      ROTATION_SPEED: 0.05,
+      ORBIT_RADIUS: 50,
+      DRONE_RADIUS: 8,
+    },
+    LIGHTNING: {
+      BASE_DAMAGE: 15,
+      COOLDOWN: 3000,
+      CHAIN_COUNT: 3,
+      CHAIN_RANGE: 150,
+    },
+    FIELD: {
+      BASE_DAMAGE: 5,
+      FIELD_RADIUS: 60,
+      DAMAGE_INTERVAL: 500,
+      KNOCKBACK_FORCE: 3,
+    },
+  },
+
   // 渲染相关
   RENDERING: {
     TARGET_FPS: 60,
@@ -101,6 +165,15 @@ export const GAME_CONFIG = {
     SHIELD: "rgba(96, 165, 250, 0.5)",
     AIM_INDICATOR: "#fbbf24",
     SHADOW: "rgba(0, 0, 0, 0.3)",
+    // 新增敌人类型颜色
+    ENEMY_SWARM: "#ef4444",
+    ENEMY_RUSHER: "#f97316",
+    ENEMY_SHOOTER: "#8b5cf6",
+    ENEMY_ELITE: "#eab308",
+    // 新增武器颜色
+    WEAPON_ORBITAL: "#06b6d4",
+    WEAPON_LIGHTNING: "#a855f7",
+    WEAPON_FIELD: "#10b981",
   },
 };
 
@@ -123,5 +196,8 @@ export const SKILLS: Skill[] = [
   { id: "life_steal", name: "生命汲取", description: "击杀敌人恢复5点生命", type: "special" },
   { id: "bullet_size", name: "子弹增幅", description: "子弹体积 +50%", type: "attack" },
   { id: "move_speed", name: "移动加速", description: "移动速度 +20%", type: "special" },
+  { id: "orbital_drone", name: "轨道无人机", description: "获得环绕的攻击无人机", type: "special" },
+  { id: "lightning_chain", name: "闪电链", description: "定期释放连锁闪电", type: "special" },
+  { id: "guardian_field", name: "守护力场", description: "环状力场伤害并击退敌人", type: "special" },
 ];
 
