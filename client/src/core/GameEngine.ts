@@ -7,6 +7,7 @@ import { SpatialGrid } from "../utils/SpatialGrid";
 import { DamageNumberSystem } from "../utils/DamageNumbers";
 import { BackgroundRenderer } from "../utils/BackgroundRenderer";
 import { PerformanceMonitor } from "../utils/PerformanceMonitor";
+import { MathUtils } from "../utils/MathUtils";
 
 /**
  * 游戏引擎核心类
@@ -57,6 +58,9 @@ export class GameEngine {
   // 回调函数
   private onLevelUp?: () => void;
   private onGameOver?: () => void;
+  
+  // 事件处理器
+  private keyboardHandler: ((e: KeyboardEvent) => void) | null = null;
   private onStatsUpdate?: (stats: GameStats) => void;
   private onError?: (error: Error) => void;
 
@@ -98,16 +102,18 @@ export class GameEngine {
   }
 
   /**
-   * 设置键盘监听器
+   * 设置键盘监听器 (修复: 保存处理器引用以便清理)
    */
   private setupKeyboardListeners(): void {
-    window.addEventListener("keydown", (e) => {
+    this.keyboardHandler = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "p" && e.ctrlKey) {
         e.preventDefault();
         const currentState = this.performanceMonitor.getFPS() > 0;
         this.performanceMonitor.setEnabled(!currentState);
       }
-    });
+    };
+    
+    window.addEventListener("keydown", this.keyboardHandler);
   }
 
   /**
@@ -199,6 +205,42 @@ export class GameEngine {
    */
   public getStats(): Readonly<GameStats> {
     return { ...this.stats };
+  }
+
+  /**
+   * 计算升级所需经验值
+   * @param level 当前等级
+   * @returns 升级所需经验值
+   */
+  private calculateExpNeeded(level: number): number {
+    return level * GAME_CONFIG.LEVELING.EXP_MULTIPLIER;
+  }
+
+  /**
+   * 处理玩家升级（修复：支持多级升级）
+   */
+  private handleLevelUp(): void {
+    let leveledUp = false;
+    
+    // 循环检查是否可以升级
+    while (true) {
+      const expNeeded = this.calculateExpNeeded(this.player.level);
+      
+      if (this.player.exp >= expNeeded) {
+        this.player.exp -= expNeeded;
+        this.player.level++;
+        leveledUp = true;
+        
+        console.log(`[GameEngine] Level up! Now level ${this.player.level}`);
+      } else {
+        break;
+      }
+    }
+    
+    // 只在升级后触发一次回调
+    if (leveledUp && this.onLevelUp) {
+      this.onLevelUp();
+    }
   }
 
   /**
@@ -393,17 +435,22 @@ export class GameEngine {
     if (this.keys.has("d") || this.keys.has("arrowright")) dx += 1;
 
     if (dx !== 0 || dy !== 0) {
-      const length = Math.sqrt(dx * dx + dy * dy);
-      dx = (dx / length) * this.player.moveSpeed * deltaTime;
-      dy = (dy / length) * this.player.moveSpeed * deltaTime;
+      // 使用安全的归一化
+      const { x: normalizedX, y: normalizedY } = MathUtils.safeNormalize(dx, dy);
+      
+      const moveX = normalizedX * this.player.moveSpeed * deltaTime;
+      const moveY = normalizedY * this.player.moveSpeed * deltaTime;
 
-      this.player.x = Math.max(
+      // 使用 clamp 限制位置
+      this.player.x = MathUtils.clamp(
+        this.player.x + moveX,
         this.player.radius,
-        Math.min(this.width - this.player.radius, this.player.x + dx)
+        this.width - this.player.radius
       );
-      this.player.y = Math.max(
+      this.player.y = MathUtils.clamp(
+        this.player.y + moveY,
         this.player.radius,
-        Math.min(this.height - this.player.radius, this.player.y + dy)
+        this.height - this.player.radius
       );
     }
   }
@@ -420,8 +467,10 @@ export class GameEngine {
       if (enemy.type === "shooter") {
         const shootRange = GAME_CONFIG.ENEMY.TYPES.shooter.shootRange || 250;
         if (distance > shootRange) {
-          enemy.x += (dx / distance) * enemy.speed * deltaTime;
-          enemy.y += (dy / distance) * enemy.speed * deltaTime;
+          // 使用安全的归一化
+          const { x: normalizedX, y: normalizedY } = MathUtils.safeNormalize(dx, dy);
+          enemy.x += normalizedX * enemy.speed * deltaTime;
+          enemy.y += normalizedY * enemy.speed * deltaTime;
         }
 
         const shootCooldown =
@@ -443,8 +492,10 @@ export class GameEngine {
           enemy.lastShotTime = now;
         }
       } else {
-        enemy.x += (dx / distance) * enemy.speed * deltaTime;
-        enemy.y += (dy / distance) * enemy.speed * deltaTime;
+        // 使用安全的归一化
+        const { x: normalizedX, y: normalizedY } = MathUtils.safeNormalize(dx, dy);
+        enemy.x += normalizedX * enemy.speed * deltaTime;
+        enemy.y += normalizedY * enemy.speed * deltaTime;
       }
     }
   }
@@ -453,7 +504,8 @@ export class GameEngine {
    * 玩家射击
    */
   private handlePlayerShooting(now: number): void {
-    const shootInterval = 1000 / this.player.attackSpeed;
+    // 使用安全除法避免除零
+    const shootInterval = MathUtils.safeDivide(1000, this.player.attackSpeed, 1000);
     if (now - this.lastShotTime < shootInterval) return;
 
     const enemies = this.enemyManager.getEnemies();
@@ -554,18 +606,20 @@ export class GameEngine {
     this.spatialGrid.clear();
     enemies.forEach((e) => this.spatialGrid.insert(e));
 
-    // 子弹与敌人碰撞 (修复: 使用 getNearby 而不是 query)
+    // 子弹与敌人碰撞 (优化: 使用距离平方和动态查询范围)
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const bullet = this.bullets[i];
-      const nearbyEnemies = this.spatialGrid.getNearby(bullet.x, bullet.y, 50);
+      // 动态查询范围：子弹半径 + 敌人最大半径 + 安全边距
+      const queryRadius = bullet.radius + 30 + 10;
+      const nearbyEnemies = this.spatialGrid.getNearby(bullet.x, bullet.y, queryRadius);
 
       let hit = false;
       for (const enemy of nearbyEnemies) {
-        const dx = bullet.x - enemy.x;
-        const dy = bullet.y - enemy.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance < bullet.radius + enemy.radius) {
+        // 使用优化的碰撞检测（距离平方）
+        if (MathUtils.checkCircleCollision(
+          bullet.x, bullet.y, bullet.radius,
+          enemy.x, enemy.y, enemy.radius
+        )) {
           enemy.health -= bullet.damage;
           this.damageNumbers.add(enemy.x, enemy.y, bullet.damage);
 
@@ -615,15 +669,11 @@ export class GameEngine {
           );
         }
 
+        // 添加经验
         this.player.exp += GAME_CONFIG.LEVELING.EXP_PER_KILL;
-        const expNeeded = this.player.level * GAME_CONFIG.LEVELING.EXP_MULTIPLIER;
-        if (this.player.exp >= expNeeded) {
-          this.player.exp -= expNeeded;
-          this.player.level++;
-          if (this.onLevelUp) {
-            this.onLevelUp();
-          }
-        }
+        
+        // 处理升级（可能升多级）
+        this.handleLevelUp();
 
         enemies.splice(i, 1);
       }
@@ -631,27 +681,20 @@ export class GameEngine {
 
     this.enemyManager.setEnemies(enemies);
 
-    // 敌人子弹与玩家碰撞
+    // 敌人子弹与玩家碰撞 (优化: 使用距离平方)
     for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
       const bullet = this.enemyBullets[i];
-      const dx = bullet.x - this.player.x;
-      const dy = bullet.y - this.player.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance < bullet.radius + this.player.radius) {
+      
+      // 使用优化的碰撞检测
+      if (MathUtils.checkCircleCollision(
+        bullet.x, bullet.y, bullet.radius,
+        this.player.x, this.player.y, this.player.radius
+      )) {
         if (
           now - this.lastDamageTime >
           GAME_CONFIG.PLAYER.DAMAGE_COOLDOWN
         ) {
-          if (this.player.shield > 0) {
-            this.player.shield -= bullet.damage;
-            if (this.player.shield < 0) {
-              this.player.health += this.player.shield;
-              this.player.shield = 0;
-            }
-          } else {
-            this.player.health -= bullet.damage;
-          }
+          this.applyDamage(bullet.damage);
 
           this.lastDamageTime = now;
           this.particlePool.createParticles(
@@ -666,13 +709,19 @@ export class GameEngine {
       }
     }
 
-    // 玩家与敌人碰撞
-    for (const enemy of enemies) {
-      const dx = this.player.x - enemy.x;
-      const dy = this.player.y - enemy.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance < this.player.radius + enemy.radius) {
+    // 玩家与敌人碰撞 (优化: 使用空间网格和距离平方)
+    const nearbyEnemiesForPlayer = this.spatialGrid.getNearby(
+      this.player.x,
+      this.player.y,
+      this.player.radius + 30 // 玩家半径 + 敌人最大半径
+    );
+    
+    for (const enemy of nearbyEnemiesForPlayer) {
+      // 使用优化的碰撞检测
+      if (MathUtils.checkCircleCollision(
+        this.player.x, this.player.y, this.player.radius,
+        enemy.x, enemy.y, enemy.radius
+      )) {
         if (
           now - this.lastDamageTime >
           GAME_CONFIG.PLAYER.DAMAGE_COOLDOWN
@@ -680,15 +729,7 @@ export class GameEngine {
           const typeConfig = GAME_CONFIG.ENEMY.TYPES[enemy.type];
           const damage = typeConfig.damage;
 
-          if (this.player.shield > 0) {
-            this.player.shield -= damage;
-            if (this.player.shield < 0) {
-              this.player.health += this.player.shield;
-              this.player.shield = 0;
-            }
-          } else {
-            this.player.health -= damage;
-          }
+          this.applyDamage(damage);
 
           this.lastDamageTime = now;
           this.particlePool.createParticles(
@@ -700,6 +741,26 @@ export class GameEngine {
         }
       }
     }
+  }
+
+  /**
+   * 应用伤害到玩家（修复：正确处理护盾溢出）
+   */
+  private applyDamage(damage: number): void {
+    if (this.player.shield > 0) {
+      this.player.shield -= damage;
+      if (this.player.shield < 0) {
+        // 护盾溢出的伤害转移到生命值
+        const overflow = Math.abs(this.player.shield);
+        this.player.shield = 0;
+        this.player.health -= overflow;
+      }
+    } else {
+      this.player.health -= damage;
+    }
+    
+    // 确保生命值在有效范围内
+    this.player.health = MathUtils.clamp(this.player.health, 0, this.player.maxHealth);
   }
 
   /**
@@ -956,10 +1017,42 @@ export class GameEngine {
   }
 
   /**
-   * 清理资源
+   * 清理资源 (修复: 完善资源清理，防止内存泄漏)
    */
   public destroy(): void {
+    console.log('[GameEngine] Destroying game engine...');
+    
+    // 停止游戏循环
     this.stop();
+    
+    // 移除事件监听器
+    if (this.keyboardHandler) {
+      window.removeEventListener("keydown", this.keyboardHandler);
+      this.keyboardHandler = null;
+    }
+    
+    // 清理子系统
+    try {
+      this.enemyManager?.reset();
+      this.particlePool?.clear();
+      this.damageNumbers?.clear();
+      this.performanceMonitor?.reset();
+      this.spatialGrid?.clear();
+    } catch (error) {
+      console.error('[GameEngine] Error during subsystem cleanup', error);
+    }
+    
+    // 清空数组
+    this.bullets = [];
+    this.enemyBullets = [];
     this.keys.clear();
+    
+    // 清空回调
+    this.onLevelUp = undefined;
+    this.onGameOver = undefined;
+    this.onStatsUpdate = undefined;
+    this.onError = undefined;
+    
+    console.log('[GameEngine] Game engine destroyed successfully');
   }
 }
