@@ -183,21 +183,22 @@ export interface Skill {
   name: string;
   description: string;
   type: "health" | "attack" | "shield" | "special";
+  icon?: string;
 }
 
 export const SKILLS: Skill[] = [
-  { id: "health_boost", name: "生命强化", description: "最大生命值 +20", type: "health" },
-  { id: "attack_boost", name: "攻击强化", description: "攻击力 +5", type: "attack" },
-  { id: "speed_boost", name: "速度强化", description: "攻击速度 +15%", type: "attack" },
-  { id: "range_boost", name: "射程强化", description: "攻击范围 +50", type: "attack" },
-  { id: "multi_shot", name: "多重射击", description: "子弹数量 +1", type: "attack" },
-  { id: "shield_boost", name: "护盾强化", description: "最大护盾 +20", type: "shield" },
-  { id: "pierce_shot", name: "穿透射击", description: "子弹可穿透敌人", type: "special" },
-  { id: "life_steal", name: "生命汲取", description: "击杀敌人恢复5点生命", type: "special" },
-  { id: "bullet_size", name: "子弹增幅", description: "子弹体积 +50%", type: "attack" },
-  { id: "move_speed", name: "移动加速", description: "移动速度 +20%", type: "special" },
-  { id: "orbital_drone", name: "轨道无人机", description: "获得环绕的攻击无人机", type: "special" },
-  { id: "lightning_chain", name: "闪电链", description: "定期释放连锁闪电", type: "special" },
-  { id: "guardian_field", name: "守护力场", description: "环状力场伤害并击退敌人", type: "special" },
+  { id: "health_boost", name: "生命强化", description: "最大生命值 +20", type: "health", icon: "❤️" },
+  { id: "attack_boost", name: "攻击强化", description: "攻击力 +5", type: "attack", icon: "⚔️" },
+  { id: "speed_boost", name: "速度强化", description: "攻击速度 +15%", type: "attack", icon: "⚡" },
+  { id: "range_boost", name: "射程强化", description: "攻击范围 +50", type: "attack", icon: "🎯" },
+  { id: "multi_shot", name: "多重射击", description: "子弹数量 +1", type: "attack", icon: "🔫" },
+  { id: "shield_boost", name: "护盾强化", description: "最大护盾 +20", type: "shield", icon: "🛡️" },
+  { id: "pierce_shot", name: "穿透射击", description: "子弹可穿透敌人", type: "special", icon: "💥" },
+  { id: "life_steal", name: "生命汲取", description: "击杀敌人恢复5点生命", type: "special", icon: "🩸" },
+  { id: "bullet_size", name: "子弹增幅", description: "子弹体积 +50%", type: "attack", icon: "🔵" },
+  { id: "move_speed", name: "移动加速", description: "移动速度 +20%", type: "special", icon: "💨" },
+  { id: "orbital_drone", name: "轨道无人机", description: "获得环绕的攻击无人机", type: "special", icon: "🛸" },
+  { id: "lightning_chain", name: "闪电链", description: "定期释放连锁闪电", type: "special", icon: "⚡" },
+  { id: "guardian_field", name: "守护力场", description: "环状力场伤害并击退敌人", type: "special", icon: "🌀" },
 ];
 

@@ -225,7 +225,7 @@ export default function Game() {
     // 检查是否破纪录
     if (currentStats.score > stats.highScore) {
       setIsNewRecord(true);
-      GameStorage.updateHighScore(currentStats.score);
+      GameStorage.save({ highScore: currentStats.score });
       setStats((prev) => ({ ...prev, highScore: currentStats.score }));
     }
 
