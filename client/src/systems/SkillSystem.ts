@@ -75,14 +75,29 @@ export class SkillSystem {
     this.registerSkill({
       id: "attack_boost",
       name: "攻击强化",
-      description: "攻击力 +5",
+      description: "攻击力 +30%",
       type: "attack",
       icon: "⚔️",
       apply: (player: Player) => {
-        player.attackDamage += GAME_CONFIG.SKILLS.ATTACK_BOOST;
+        player.attackDamage = Math.floor(player.attackDamage * 1.3);
         return true;
       },
       canSelect: () => true,
+    });
+
+    // 强力攻击技能（较低出现概率）
+    this.registerSkill({
+      id: "attack_boost_major",
+      name: "强力攻击",
+      description: "攻击力 +50%",
+      type: "attack",
+      rarity: "rare",
+      icon: "🗡️",
+      apply: (player: Player) => {
+        player.attackDamage = Math.floor(player.attackDamage * 1.5);
+        return true;
+      },
+      canSelect: () => Math.random() < 0.3, // 30%出现概率
     });
 
     this.registerSkill({
@@ -114,11 +129,13 @@ export class SkillSystem {
     this.registerSkill({
       id: "multi_shot",
       name: "多重射击",
-      description: "子弹数量 +1",
+      description: "子弹数量 +1，伤害 -30%",
       type: "attack",
       icon: "🔫",
       apply: (player: Player) => {
         player.bulletCount += 1;
+        // 每次选择多重射击，伤害降低30%
+        player.attackDamage = Math.floor(player.attackDamage * 0.7);
         return true;
       },
       canSelect: (player: Player) => player.bulletCount < 10, // 最多10个子弹
@@ -423,8 +440,8 @@ export class SkillSystem {
       !player.hasLifeSteal &&
       lifeStealSkill.canSelect(player);
 
-    // 初始出现概率3%，若玩家已选择过则不再出现（0%）
-    if (canLifeStealAppear && Math.random() < 0.03) {
+    // 初始出现概率0.5%，若玩家已选择过则不再出现（0%）
+    if (canLifeStealAppear && Math.random() < 0.005) {
       selected.push(lifeStealSkill!);
       // 记录在选项中的“出现”次数（用于统计）
       if (!player.skillAppearances) player.skillAppearances = {};

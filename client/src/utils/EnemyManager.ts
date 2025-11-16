@@ -59,12 +59,12 @@ export class EnemyManager {
   }
 
   private getSpawnInterval(survivalTime: number, playerLevel: number): number {
-    // 基于等级的刷新间隔：每级增加22%速度（减少间隔）
+    // 基于等级的刷新间隔：大幅降低增长速度
     const baseInterval = GAME_CONFIG.ENEMY.INITIAL_SPAWN_INTERVAL;
     const minInterval = GAME_CONFIG.ENEMY.MIN_SPAWN_INTERVAL;
 
-    // 调整为更慢的等级缩放（可配置），默认0.88每级
-    const perLevel = GAME_CONFIG.ENEMY.SPAWN_INTERVAL_PER_LEVEL_MULTIPLIER ?? 0.88;
+    // 大幅降低等级缩放：每级仅增加6%速度（减少间隔）
+    const perLevel = 0.94; // 从0.88调整为0.94，降低敌人生长速度
     const levelMultiplier = Math.pow(perLevel, Math.max(0, playerLevel - 1));
     const interval = baseInterval * levelMultiplier;
 
@@ -72,16 +72,14 @@ export class EnemyManager {
   }
 
   private getSpawnCount(survivalTime: number, playerLevel: number): number {
-    // 降低生成数量增长：前期更平缓，后期增长更慢
-    if (playerLevel < 4) return 1;
-    if (playerLevel < 8) return 2;
-    if (playerLevel < 12) return 3;
-    if (playerLevel < 16) return 4;
-    // 16级之后每4级增加1个，并对增长进行更强抑制
-    const additional = Math.floor((playerLevel - 16) / 4);
-    const growthMultiplier = (GAME_CONFIG.ENEMY.SPAWN_GROWTH_MULTIPLIER_AFTER_16 ?? 0.5);
-    const adjustedAdditional = Math.floor(additional * growthMultiplier);
-    return Math.min(4 + adjustedAdditional, 8); // 上限降低到8
+    // 大幅降低生成数量增长，让游戏节奏更平缓
+    if (playerLevel < 6) return 1;      // 前5级只生成1个
+    if (playerLevel < 12) return 2;     // 6-11级生成2个
+    if (playerLevel < 20) return 3;     // 12-19级生成3个
+    if (playerLevel < 30) return 4;     // 20-29级生成4个
+    // 30级之后每8级增加1个，增长极其缓慢
+    const additional = Math.floor((playerLevel - 30) / 8);
+    return Math.min(4 + additional, 6); // 上限降低到6个
   }
 
   private selectEnemyType(playerLevel: number): EnemyType {
