@@ -14,7 +14,8 @@
       "mcp__filesystem__edit_file",
       "Bash(git push:*)",
       "Bash(README.md)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

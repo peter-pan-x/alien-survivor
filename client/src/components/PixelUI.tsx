@@ -229,6 +229,20 @@ function PixelMainMenu({
           <div>ESC - PAUSE</div>
         </div>
       </div>
+
+      {/* 作者署名 */}
+      <div 
+        className="pixel-text" 
+        style={{ 
+          fontSize: '12px', 
+          color: '#718096',
+          textAlign: 'center',
+          marginTop: '16px',
+          fontStyle: 'italic'
+        }}
+      >
+        AGI-彼得潘
+      </div>
     </div>
   );
 }
@@ -318,10 +332,42 @@ function PixelLevelUp({
                   fontSize: '10px',
                   textTransform: 'uppercase',
                   color: '#cbd5e0',
+                  marginRight: '4px',
                 }}
               >
                 {skill.type}
               </div>
+
+              {/* 稀有度标签 */}
+              {skill.rarity && (
+                <div
+                  style={{
+                    marginTop: '12px',
+                    padding: '4px 8px',
+                    display: 'inline-block',
+                    fontSize: '10px',
+                    textTransform: 'uppercase',
+                    fontWeight: 'bold',
+                    ...(skill.rarity === 'epic'
+                      ? {
+                          background: '#553c9a',
+                          border: '2px solid #6b46c1',
+                          color: '#e9d5ff',
+                          boxShadow: '0 0 8px rgba(139, 92, 246, 0.6)',
+                        }
+                      : skill.rarity === 'rare'
+                      ? {
+                          background: '#065f46',
+                          border: '2px solid #047857',
+                          color: '#a7f3d0',
+                          boxShadow: '0 0 6px rgba(16, 185, 129, 0.4)',
+                        }
+                      : {}),
+                  }}
+                >
+                  {skill.rarity === 'epic' ? '史诗' : skill.rarity === 'rare' ? '稀有' : ''}
+                </div>
+              )}
             </button>
           ))}
         </div>

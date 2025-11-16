@@ -12,7 +12,7 @@ export interface SkillEffect {
   type: "health" | "attack" | "shield" | "special";
   icon?: string;
   // 稀有度：用于控制出现概率
-  rarity?: "common" | "rare";
+  rarity?: "common" | "rare" | "epic";
   
   /**
    * 应用技能效果到玩家
@@ -233,6 +233,7 @@ export class SkillSystem {
       name: "生命汲取",
       description: "击杀敌人恢复1点生命（可重复选择，每次+1）",
       type: "special",
+      rarity: "epic",
       icon: "🩸",
       apply: (player: Player) => {
         player.hasLifeSteal = true;
@@ -450,14 +451,18 @@ export class SkillSystem {
     }
 
     const getWeight = (skill: SkillEffect): number => {
-      // 稀有技能：基础权重降低，并随选择次数递减
+      // 史诗技能：极低出现概率（低于5%）
+      if (skill.rarity === "epic") {
+        return 0.05; // 5%权重，对应约0.5-2%出现概率
+      }
+      // 稀有技能：低出现概率（低于10%）
       if (skill.rarity === "rare") {
         const baseRare = GAME_CONFIG.SKILLS.RARE_WEIGHT_MULTIPLIER ?? 0.67; // 默认降低33%
         const timesSelected = player.rareSkillSelections?.[skill.id] ?? 0;
         const decayPerPick = 0.89; // 每次选择后再降低11%
         return baseRare * Math.pow(decayPerPick, timesSelected);
       }
-      return 1;
+      return 1; // 普通技能正常权重
     };
 
     const picks = Math.min(count - selected.length, pool.length);
