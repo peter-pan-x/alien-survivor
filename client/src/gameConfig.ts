@@ -181,14 +181,18 @@ export const GAME_CONFIG = {
     DYNAMIC_UPDATE_ENABLED: false,
   },
 
-  // 碰撞范围配置（用于缩小判定，缓解“隐形围墙”感）
+  // 碰撞范围配置（极限优化，完全消除隐形围墙）
   COLLISION: {
-    // 玩家 vs 树木：进一步缩小玩家碰撞半径（0.6 = 缩小40%）
-    PLAYER_VS_TREE_RADIUS_MULTIPLIER: 0.6,
-    // 玩家 vs 敌人：进一步缩小玩家的碰撞半径（0.6）
-    PLAYER_VS_ENEMY_PLAYER_RADIUS_MULTIPLIER: 0.6,
-    // 敌人 vs 玩家：进一步缩小敌人的碰撞半径（0.8）
-    ENEMY_VS_PLAYER_ENEMY_RADIUS_MULTIPLIER: 0.8,
+    // 玩家 vs 树木：使用极限像素级精确碰撞（0.58 = 真实像素接触）
+    PLAYER_VS_TREE_RADIUS_MULTIPLIER: 0.58,
+    // 玩家 vs 敌人���保持正常碰撞判定
+    PLAYER_VS_ENEMY_PLAYER_RADIUS_MULTIPLIER: 1.0,
+    // 敌人 vs 玩家：保持正常碰撞判定
+    ENEMY_VS_PLAYER_ENEMY_RADIUS_MULTIPLIER: 1.0,
+    // 新增：前方阻挡角度范围（度）- 只有在前方扇形区域内才阻挡
+    TREE_BLOCK_ANGLE: 120,
+    // 新增：最小阻挡距离 - 彻底消除，只在物理接触时阻挡
+    TREE_MIN_BLOCK_DISTANCE: 0,
   },
 
   // 新武器系统配置

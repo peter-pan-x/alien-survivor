@@ -569,6 +569,94 @@ export class GameEngine {
   }
 
   /**
+   * 尝试简单的边缘滑动
+   * @param currentX 当前X位置
+   * @param currentY 当前Y位置
+   * @param moveX X轴移动量
+   * @param moveY Y轴移动量
+   * @param playerRadius 玩家半径
+   * @param tree 碰撞的树木
+   * @returns 滑动后的位置或null
+   */
+  private trySimpleSlide(
+    currentX: number,
+    currentY: number,
+    moveX: number,
+    moveY: number,
+    playerRadius: number,
+    tree: any
+  ): { x: number; y: number } | null {
+    // 计算移动距离
+    const moveLength = Math.sqrt(moveX * moveX + moveY * moveY);
+    if (moveLength === 0) return null;
+    
+    // 计算从树木中心到玩家的方向
+    const toPlayerX = currentX - tree.x;
+    const toPlayerY = currentY - tree.y;
+    const distanceToTree = Math.sqrt(toPlayerX * toPlayerX + toPlayerY * toPlayerY);
+    
+    if (distanceToTree === 0) {
+      // 玩家正好在树木中心，随机方向推出
+      const randomAngle = Math.random() * Math.PI * 2;
+      const pushDistance = tree.radius + playerRadius + 2;
+      return {
+        x: tree.x + Math.cos(randomAngle) * pushDistance,
+        y: tree.y + Math.sin(randomAngle) * pushDistance
+      };
+    }
+    
+    // 计算垂直方向（用于滑动）
+    const toPlayerNormX = toPlayerX / distanceToTree;
+    const toPlayerNormY = toPlayerY / distanceToTree;
+    
+    // 垂直于从树木到玩家方向的两个滑动方向
+    const slideDir1X = -toPlayerNormY;
+    const slideDir1Y = toPlayerNormX;
+    const slideDir2X = toPlayerNormY;
+    const slideDir2Y = -toPlayerNormX;
+    
+    // 选择与移动方向更接近的滑动方向
+    const moveDirX = moveX / moveLength;
+    const moveDirY = moveY / moveLength;
+    
+    const dot1 = slideDir1X * moveDirX + slideDir1Y * moveDirY;
+    const dot2 = slideDir2X * moveDirX + slideDir2Y * moveDirY;
+    
+    const chosenSlideDirX = dot1 > dot2 ? slideDir1X : slideDir2X;
+    const chosenSlideDirY = dot1 > dot2 ? slideDir1Y : slideDir2Y;
+    
+    // 尝试滑动移动（较小距离）
+    const slideDistance = Math.min(moveLength * 0.3, playerRadius * 0.8);
+    const slideX = chosenSlideDirX * slideDistance;
+    const slideY = chosenSlideDirY * slideDistance;
+    
+    const slideNextX = currentX + slideX;
+    const slideNextY = currentY + slideY;
+    
+    // 检查滑动位置是否安全
+    const slideCollision = this.treeSystem.checkCollision(slideNextX, slideNextY, playerRadius);
+    if (!slideCollision) {
+      return { x: slideNextX, y: slideNextY };
+    }
+    
+    // 如果滑动不安全，尝试沿移动方向稍微移动
+    const smallMoveDistance = playerRadius * 0.3;
+    const smallMoveX = moveDirX * smallMoveDistance;
+    const smallMoveY = moveDirY * smallMoveDistance;
+    const smallNextX = currentX + smallMoveX;
+    const smallNextY = currentY + smallMoveY;
+    
+    const smallCollision = this.treeSystem.checkCollision(smallNextX, smallNextY, playerRadius);
+    if (!smallCollision) {
+      return { x: smallNextX, y: smallNextY };
+    }
+    
+    return null;
+  }
+
+
+
+  /**
    * 更新玩家位置
    * 无尽地图模式：无边界限制，玩家可以自由移动
    */
@@ -589,19 +677,30 @@ export class GameEngine {
       const moveX = normalizedX * this.player.moveSpeed * deltaTime;
       const moveY = normalizedY * this.player.moveSpeed * deltaTime;
 
-      // 先尝试沿X移动，检测与树木碰撞，若碰撞则取消该轴移动
-      const nextX = this.player.x + moveX;
-      const playerTreeRadius = this.player.radius * (GAME_CONFIG.COLLISION?.PLAYER_VS_TREE_RADIUS_MULTIPLIER ?? 0.7) * 0.67; // 减少33%
-      const collisionX = this.treeSystem.checkCollision(nextX, this.player.y, playerTreeRadius);
-      if (!collisionX) {
-        this.player.x = nextX;
-      }
-
-      // 再尝试沿Y移动，检测与树木碰撞，若碰撞则取消该轴移动
-      const nextY = this.player.y + moveY;
-      const collisionY = this.treeSystem.checkCollision(this.player.x, nextY, playerTreeRadius);
-      if (!collisionY) {
-        this.player.y = nextY;
+      // 简化的移动逻辑：基于方向的碰撞检测
+      const playerTreeRadius = this.player.radius * (GAME_CONFIG.COLLISION?.PLAYER_VS_TREE_RADIUS_MULTIPLIER ?? 0.85);
+      
+      // 检查移动是否被阻挡
+      const blockResult = this.treeSystem.checkPlayerMovementBlock(
+        this.player.x, 
+        this.player.y, 
+        moveX, 
+        moveY, 
+        playerTreeRadius
+      );
+      
+      if (!blockResult.blocked) {
+        // 没有被阻挡，直接移动
+        this.player.x += moveX;
+        this.player.y += moveY;
+      } else {
+        // 被阻挡，尝试简单的边缘滑动
+        const slideResult = this.trySimpleSlide(this.player.x, this.player.y, moveX, moveY, playerTreeRadius, blockResult.tree);
+        if (slideResult) {
+          this.player.x = slideResult.x;
+          this.player.y = slideResult.y;
+        }
+        // 如果滑动也失败，保持原位置
       }
     }
 

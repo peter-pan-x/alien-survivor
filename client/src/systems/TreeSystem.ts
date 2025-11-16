@@ -202,6 +202,74 @@ export class TreeSystem {
   }
 
   /**
+   * 检查玩家移动是否会受到树木阻挡（基于方向和距离）
+   * @param playerX 玩家当前X位置
+   * @param playerY 玩家当前Y位置
+   * @param moveX X轴移动量
+   * @param moveY Y轴移动量
+   * @param playerRadius 玩家半径
+   * @returns 是否被阻挡及阻挡的树木
+   */
+  public checkPlayerMovementBlock(
+    playerX: number,
+    playerY: number,
+    moveX: number,
+    moveY: number,
+    playerRadius: number
+  ): { blocked: boolean; tree: Tree | null } {
+    // 如果没有移动，不会被阻挡
+    if (moveX === 0 && moveY === 0) {
+      return { blocked: false, tree: null };
+    }
+
+    // 计算移动方向
+    const moveLength = Math.sqrt(moveX * moveX + moveY * moveY);
+    const moveDirX = moveX / moveLength;
+    const moveDirY = moveY / moveLength;
+
+    // 检查目标位置
+    const targetX = playerX + moveX;
+    const targetY = playerY + moveY;
+
+    for (const tree of this.trees) {
+      // 计算树木与玩家的相对位置
+      const toTreeX = tree.x - playerX;
+      const toTreeY = tree.y - playerY;
+      const distanceToTree = Math.sqrt(toTreeX * toTreeX + toTreeY * toTreeY);
+      
+      // 如果距离太远，跳过
+      const maxCheckDistance = tree.radius + playerRadius + 20;
+      if (distanceToTree > maxCheckDistance) {
+        continue;
+      }
+
+      // 计算树木相对于玩家移动方向的角度
+      const toTreeNormX = toTreeX / distanceToTree;
+      const toTreeNormY = toTreeY / distanceToTree;
+      const dotProduct = toTreeNormX * moveDirX + toTreeNormY * moveDirY;
+      const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct))) * (180 / Math.PI);
+
+      // 只有在玩家前方扇形区域内的树木才会阻挡
+      const blockAngle = GAME_CONFIG.COLLISION.TREE_BLOCK_ANGLE;
+      if (angle > blockAngle / 2) {
+        continue;
+      }
+
+      // 检查目标位置是否碰撞
+      const dx = targetX - tree.x;
+      const dy = targetY - tree.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const minBlockDistance = GAME_CONFIG.COLLISION.TREE_MIN_BLOCK_DISTANCE;
+      
+      if (distance < tree.radius + playerRadius + minBlockDistance) {
+        return { blocked: true, tree };
+      }
+    }
+
+    return { blocked: false, tree: null };
+  }
+
+  /**
    * 获取指定区域内的树木
    */
   public getTreesInArea(centerX: number, centerY: number, radius: number): Tree[] {
