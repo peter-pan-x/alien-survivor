@@ -1,0 +1,316 @@
+/**
+ * 像素风格UI样式
+ * 8-bit/16-bit 复古游戏风格
+ */
+
+/* 像素字体 */
+@font-face {
+  font-family: 'PixelFont';
+  src: url('data:font/woff2;base64,') format('woff2');
+  font-display: swap;
+}
+
+/* 使用系统像素字体作为后备 */
+.pixel-font {
+  font-family: 'Courier New', 'Monaco', 'Menlo', monospace;
+  font-weight: bold;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  text-rendering: optimizeSpeed;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+}
+
+/* 像素风格按钮 */
+.pixel-button {
+  position: relative;
+  padding: 12px 24px;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 16px;
+  color: #fff;
+  background: #4a5568;
+  border: 3px solid;
+  border-color: #2d3748 #1a202c #1a202c #2d3748;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  image-rendering: pixelated;
+  transition: none;
+  box-shadow: 
+    inset -2px -2px 0 #1a202c,
+    inset 2px 2px 0 #718096;
+}
+
+.pixel-button:hover {
+  background: #5a6578;
+  border-color: #4a5568 #2d3748 #2d3748 #4a5568;
+}
+
+.pixel-button:active {
+  background: #3a4558;
+  border-color: #1a202c #2d3748 #2d3748 #1a202c;
+  box-shadow: 
+    inset 2px 2px 0 #1a202c,
+    inset -2px -2px 0 #718096;
+}
+
+/* 像素风格卡片 */
+.pixel-card {
+  background: #2d3748;
+  border: 3px solid;
+  border-color: #4a5568 #1a202c #1a202c #4a5568;
+  box-shadow: 
+    inset -2px -2px 0 #1a202c,
+    inset 2px 2px 0 #718096,
+    0 4px 8px rgba(0, 0, 0, 0.3);
+  image-rendering: pixelated;
+}
+
+/* 像素风格输入框 */
+.pixel-input {
+  padding: 8px 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #fff;
+  background: #1a202c;
+  border: 2px solid;
+  border-color: #4a5568 #2d3748 #2d3748 #4a5568;
+  image-rendering: pixelated;
+}
+
+.pixel-input:focus {
+  outline: none;
+  border-color: #63b3ed #4a5568 #4a5568 #63b3ed;
+}
+
+/* 像素风格文本 */
+.pixel-text {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 
+    2px 2px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+  image-rendering: pixelated;
+}
+
+.pixel-text-outline {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 
+    2px 0 0 #000,
+    -2px 0 0 #000,
+    0 2px 0 #000,
+    0 -2px 0 #000,
+    2px 2px 0 #000,
+    -2px -2px 0 #000,
+    2px -2px 0 #000,
+    -2px 2px 0 #000;
+}
+
+/* 像素风格背景 */
+.pixel-bg {
+  background-color: #1a202c;
+  background-image: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(74, 85, 104, 0.1) 2px,
+      rgba(74, 85, 104, 0.1) 4px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 2px,
+      rgba(74, 85, 104, 0.1) 2px,
+      rgba(74, 85, 104, 0.1) 4px
+    );
+  image-rendering: pixelated;
+}
+
+/* 像素风格边框 */
+.pixel-border {
+  border: 3px solid;
+  border-color: #4a5568 #1a202c #1a202c #4a5568;
+  image-rendering: pixelated;
+}
+
+.pixel-border-inset {
+  border: 3px solid;
+  border-color: #1a202c #4a5568 #4a5568 #1a202c;
+  image-rendering: pixelated;
+}
+
+/* 像素风格进度条 */
+.pixel-progress {
+  position: relative;
+  height: 20px;
+  background: #1a202c;
+  border: 2px solid #4a5568;
+  image-rendering: pixelated;
+  overflow: hidden;
+}
+
+.pixel-progress-bar {
+  height: 100%;
+  background: linear-gradient(
+    to bottom,
+    #48bb78 0%,
+    #38a169 50%,
+    #2f855a 50%,
+    #276749 100%
+  );
+  border-right: 2px solid #1a202c;
+  image-rendering: pixelated;
+  transition: width 0.1s linear;
+}
+
+.pixel-progress-bar.health {
+  background: linear-gradient(
+    to bottom,
+    #f56565 0%,
+    #e53e3e 50%,
+    #c53030 50%,
+    #9b2c2c 100%
+  );
+}
+
+.pixel-progress-bar.shield {
+  background: linear-gradient(
+    to bottom,
+    #4299e1 0%,
+    #3182ce 50%,
+    #2c5282 50%,
+    #2a4365 100%
+  );
+}
+
+.pixel-progress-bar.exp {
+  background: linear-gradient(
+    to bottom,
+    #fbbf24 0%,
+    #f59e0b 50%,
+    #d97706 50%,
+    #b45309 100%
+  );
+}
+
+/* 像素风格图标容器 */
+.pixel-icon {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+/* 像素风格数字显示 */
+.pixel-number {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 18px;
+  color: #fff;
+  text-shadow: 
+    2px 2px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+  letter-spacing: 1px;
+}
+
+/* 像素风格标签 */
+.pixel-label {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 12px;
+  color: #cbd5e0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-shadow: 1px 1px 0 #000;
+}
+
+/* 像素风格面板 */
+.pixel-panel {
+  background: #2d3748;
+  border: 3px solid;
+  border-color: #4a5568 #1a202c #1a202c #4a5568;
+  padding: 16px;
+  box-shadow: 
+    inset -2px -2px 0 #1a202c,
+    inset 2px 2px 0 #718096,
+    0 4px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* 像素风格标题 */
+.pixel-title {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 32px;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  text-shadow: 
+    3px 3px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+  image-rendering: pixelated;
+}
+
+.pixel-title-large {
+  font-size: 48px;
+  letter-spacing: 4px;
+}
+
+/* 像素风格网格背景 */
+.pixel-grid {
+  background-image: 
+    linear-gradient(rgba(74, 85, 104, 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74, 85, 104, 0.2) 1px, transparent 1px);
+  background-size: 20px 20px;
+  image-rendering: pixelated;
+}
+
+/* 像素风格动画 */
+@keyframes pixel-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.3; }
+}
+
+.pixel-blink {
+  animation: pixel-blink 1s infinite;
+}
+
+@keyframes pixel-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.pixel-pulse {
+  animation: pixel-pulse 0.5s infinite;
+}
+
+/* 像素风格禁用状态 */
+.pixel-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(100%);
+}
+
+/* 像素风格选中状态 */
+.pixel-selected {
+  background: #4a5568;
+  border-color: #63b3ed #4299e1 #4299e1 #63b3ed;
+  box-shadow: 
+    inset -2px -2px 0 #2c5282,
+    inset 2px 2px 0 #90cdf4,
+    0 0 8px rgba(99, 179, 237, 0.5);
+}
+
