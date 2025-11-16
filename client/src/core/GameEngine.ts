@@ -15,6 +15,7 @@ import { AudioSystem } from "../systems/AudioSystem";
 import { BossSystem } from "../systems/BossSystem";
 import { Boss, Tree } from "../gameTypes";
 import { TreeSystem } from "../systems/TreeSystem";
+import { EnemyIdGenerator } from "../utils/EnemyIdGenerator";
 
 /**
  * 游戏引擎核心类
@@ -48,6 +49,7 @@ export class GameEngine {
   private audioSystem: AudioSystem; // 音频系统（独立模块）
   private bossSystem: BossSystem; // Boss系统（独立模块）
   private treeSystem: TreeSystem; // 树木系统
+  private enemyIdGenerator: EnemyIdGenerator; // 敌人ID生成器
 
   // 游戏状态
   private gameStartTime: number = 0;
@@ -121,6 +123,7 @@ export class GameEngine {
     this.audioSystem = new AudioSystem(); // 音频系统（独立模块）
     this.bossSystem = new BossSystem(); // Boss系统（独立模块）
     this.treeSystem = new TreeSystem(); // 树木系统
+    this.enemyIdGenerator = new EnemyIdGenerator(); // 敌人ID生成器
     
     // 初始化技能系统（独立模块）
     this.skillSystem = new SkillSystem();
@@ -584,7 +587,7 @@ export class GameEngine {
 
       // 先尝试沿X移动，检测与树木碰撞，若碰撞则取消该轴移动
       const nextX = this.player.x + moveX;
-      const playerTreeRadius = this.player.radius * (GAME_CONFIG.COLLISION?.PLAYER_VS_TREE_RADIUS_MULTIPLIER ?? 0.7);
+      const playerTreeRadius = this.player.radius * (GAME_CONFIG.COLLISION?.PLAYER_VS_TREE_RADIUS_MULTIPLIER ?? 0.7) * 0.67; // 减少33%
       const collisionX = this.treeSystem.checkCollision(nextX, this.player.y, playerTreeRadius);
       if (!collisionX) {
         this.player.x = nextX;
@@ -712,7 +715,11 @@ export class GameEngine {
           radius: bulletRadius,
           damage: this.player.attackDamage,
           pierce: this.player.hasPierce,
-          pierceCount: this.player.hasPierce ? 3 : 0,
+          pierceCount: this.player.hasPierce ? this.player.pierceCount || 1 : 0,
+          currentPierceCount: 0,
+          hitEnemies: new Set<number>(),
+          originalDamage: this.player.attackDamage,
+          pierceDamageReduction: this.player.pierceDamageReduction || 0.5,
         });
       }
 
@@ -792,39 +799,63 @@ export class GameEngine {
   }
 
   /**
-   * 碰撞检测 (已修复 P0 级别错误)
+   * 碰撞检测 (已修复子弹穿透问题)
    */
   private handleCollisions(now: number): void {
     const enemies = this.enemyManager.getEnemies();
 
-    // 构建空间网格 (修复: 使用正确的 insert 方法)
+    // 为没有ID的敌人分配ID
+    for (const enemy of enemies) {
+      if (enemy.id === undefined) {
+        enemy.id = this.enemyIdGenerator.getNextId();
+      }
+    }
+
+    // 构建空间网格
     this.spatialGrid.clear();
     enemies.forEach((e) => this.spatialGrid.insert(e));
 
-    // 子弹与敌人碰撞 (优化: 使用距离平方和动态查询范围)
+    // 子弹与敌人碰撞 (修复子弹穿透问题)
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const bullet = this.bullets[i];
       // 动态查询范围：子弹半径 + 敌人最大半径 + 安全边距
       const queryRadius = bullet.radius + 30 + 10;
       const nearbyEnemies = this.spatialGrid.getNearby(bullet.x, bullet.y, queryRadius);
 
-      let hit = false;
+      let shouldRemoveBullet = false;
+      
       for (const enemy of nearbyEnemies) {
+        // 检查敌人是否已经被这颗子弹击中过
+        if (bullet.hitEnemies && bullet.hitEnemies.has(enemy.id!)) {
+          continue; // 跳过已经击中过的敌人
+        }
+
         // 使用优化的碰撞检测（距离平方）
         if (MathUtils.checkCircleCollision(
           bullet.x, bullet.y, bullet.radius,
           enemy.x, enemy.y, enemy.radius
         )) {
-          // 计算暴击
+          // 计算伤害（考虑穿透伤害递减）
           let damage = bullet.damage;
+          
+          // 如果是穿透子弹，计算递减伤害
+          if (bullet.pierce && bullet.currentPierceCount! > 0) {
+            const reductionMultiplier = Math.pow(bullet.pierceDamageReduction!, bullet.currentPierceCount!);
+            damage = Math.floor(bullet.originalDamage! * reductionMultiplier);
+          }
+          
+          // 计算暴击
           let isCrit = false;
           if (Math.random() < this.player.critChance) {
             damage = Math.floor(damage * this.player.critMultiplier);
             isCrit = true;
           }
+          
+          // 应用伤害
           enemy.health -= damage;
           this.damageNumbers.add(enemy.x, enemy.y, damage);
 
+          // 创建粒子效果
           this.particlePool.createParticles(
             enemy.x,
             enemy.y,
@@ -835,21 +866,33 @@ export class GameEngine {
           // 播放击中音效
           this.audioSystem.playSound("hit");
 
-          if (bullet.pierce && bullet.pierceCount) {
-            bullet.pierceCount--;
-            if (bullet.pierceCount <= 0) {
-              hit = true;
-            }
-          } else {
-            hit = true;
+          // 记录敌人已被击中
+          if (bullet.hitEnemies) {
+            bullet.hitEnemies.add(enemy.id!);
           }
 
-          if (hit) break;
+          // 处理穿透逻辑
+          if (bullet.pierce) {
+            bullet.currentPierceCount!++;
+            
+            // 检查是否达到穿透上限
+            if (bullet.currentPierceCount >= bullet.pierceCount) {
+              shouldRemoveBullet = true;
+            }
+          } else {
+            // 非穿透子弹击中后立即消失
+            shouldRemoveBullet = true;
+          }
+
+          // 如果子弹应该消失，跳出循环
+          if (shouldRemoveBullet) {
+            break;
+          }
         }
       }
 
       // 检查子弹与Boss碰撞
-      if (!hit && this.currentBoss) {
+      if (!shouldRemoveBullet && this.currentBoss) {
         if (MathUtils.checkCircleCollision(
           bullet.x, bullet.y, bullet.radius,
           this.currentBoss.x, this.currentBoss.y, this.currentBoss.radius
@@ -870,7 +913,7 @@ export class GameEngine {
           );
 
           this.audioSystem.playSound("hit");
-          hit = true;
+          shouldRemoveBullet = true;
 
           // 检查Boss是否被击败
           if (this.currentBoss.health <= 0) {
@@ -893,7 +936,8 @@ export class GameEngine {
         }
       }
 
-      if (hit) {
+      // 移除应该消失的子弹
+      if (shouldRemoveBullet) {
         this.bullets.splice(i, 1);
       }
     }
@@ -909,18 +953,20 @@ export class GameEngine {
           GAME_CONFIG.PARTICLE.DEATH_PARTICLE_COUNT
         );
 
-        // 敌人死亡触发AOE爆炸（可升级伤害）
-        if (this.player.hasAOEExplosion && this.player.aoeDamage > 0) {
+        // 敌人死亡触发AOE爆炸（固定33%玩家伤害）
+        if (this.player.hasAOEExplosion) {
           const aoeRadius = this.player.aoeRadius;
+          const explosionDamage = Math.floor(this.player.attackDamage * 0.33);
           const nearby = this.spatialGrid.getNearby(enemy.x, enemy.y, aoeRadius);
+          
           for (const e of nearby) {
             if (e === enemy) continue;
             const dx = e.x - enemy.x;
             const dy = e.y - enemy.y;
             const distSq = dx * dx + dy * dy;
             if (distSq <= aoeRadius * aoeRadius) {
-              e.health -= this.player.aoeDamage;
-              this.damageNumbers.add(e.x, e.y, this.player.aoeDamage);
+              e.health -= explosionDamage;
+              this.damageNumbers.add(e.x, e.y, explosionDamage);
               this.particlePool.createParticles(
                 e.x,
                 e.y,
@@ -1001,7 +1047,7 @@ export class GameEngine {
     // 玩家与敌人碰撞 (优化: 使用空间网格和距离平方)
     
     if (!hasStartupProtection) {
-    const playerEnemyRadius = this.player.radius * (GAME_CONFIG.COLLISION?.PLAYER_VS_ENEMY_PLAYER_RADIUS_MULTIPLIER ?? 0.7);
+    const playerEnemyRadius = this.player.radius * (GAME_CONFIG.COLLISION?.PLAYER_VS_ENEMY_PLAYER_RADIUS_MULTIPLIER ?? 0.7) * 0.67; // 减少33%
     const nearbyEnemiesForPlayer = this.spatialGrid.getNearby(
       this.player.x,
       this.player.y,
@@ -1012,7 +1058,7 @@ export class GameEngine {
       // 使用优化的碰撞检测
       if (MathUtils.checkCircleCollision(
         this.player.x, this.player.y, playerEnemyRadius,
-        enemy.x, enemy.y, enemy.radius * (GAME_CONFIG.COLLISION?.ENEMY_VS_PLAYER_ENEMY_RADIUS_MULTIPLIER ?? 0.85)
+        enemy.x, enemy.y, enemy.radius * (GAME_CONFIG.COLLISION?.ENEMY_VS_PLAYER_ENEMY_RADIUS_MULTIPLIER ?? 0.85) * 0.67 // 减少33%
       )) {
         if (
           now - this.lastDamageTime >

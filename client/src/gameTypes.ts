@@ -29,9 +29,12 @@ export interface Player {
   hasAOEExplosion: boolean;
   aoeDamage: number; // 爆炸伤害
   aoeRadius: number; // 爆炸范围半径
+  // 子弹穿透相关
+  pierceCount: number; // 子弹可以穿透的敌人数量
+  pierceDamageReduction: number; // 穿透伤害递减系数（每次穿透后伤害 * 系数）
   // 稀有技能选择次数映射，用于动态降低同名稀有技能出现概率
   rareSkillSelections?: Record<string, number>;
-  // 技能出现次数映射（用于特殊技能按“出现”递减概率）
+  // 技能出现次数映射（用于特殊技能按"出现"递减概率）
   skillAppearances?: Record<string, number>;
   weapons: ActiveWeapon[];
 }
@@ -49,6 +52,7 @@ export interface Enemy {
   type: EnemyType;
   shootCooldown?: number;
   lastShotTime?: number;
+  id?: number; // 敌人唯一ID，用于穿透子弹追踪
 }
 
 export type BossType = 'level10' | 'level20' | 'level30' | 'level40' | 'level50';
@@ -86,6 +90,10 @@ export interface Bullet {
   damage: number;
   pierce?: boolean;
   pierceCount?: number;
+  currentPierceCount?: number; // 当前已穿透次数
+  pierceDamageReduction?: number; // 当前伤害递减系数
+  hitEnemies?: Set<number>; // 记录这颗子弹已经伤害过的敌人（通过ID）
+  originalDamage?: number; // 原始伤害（用于计算递减伤害）
   isEnemyBullet?: boolean;
 }
 

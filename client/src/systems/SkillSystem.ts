@@ -195,14 +195,20 @@ export class SkillSystem {
     this.registerSkill({
       id: "pierce_shot",
       name: "穿透射击",
-      description: "子弹可穿透敌人",
+      description: "子弹可穿透1个敌人（可升级穿透数量）",
       type: "special",
       icon: "💥",
       apply: (player: Player) => {
         player.hasPierce = true;
+        if (!player.pierceCount) {
+          player.pierceCount = 1;
+          player.pierceDamageReduction = 0.5; // 每穿透一次伤害减半
+        } else {
+          player.pierceCount += 1; // 每次升级增加1个穿透数量
+        }
         return true;
       },
-      canSelect: (player: Player) => !player.hasPierce, // 只能选择一次
+      canSelect: (player: Player) => player.hasPierce && player.pierceCount < 10, // 最多10个穿透
     });
 
     this.registerSkill({
@@ -288,26 +294,24 @@ export class SkillSystem {
       canSelect: () => true,
     });
 
-    // AOE 爆裂（敌人死亡造成范围伤害，可叠加伤害）
+    // AOE 爆裂（敌人死亡造成范围伤害，可升级范围）
     this.registerSkill({
       id: "aoe_blast",
       name: "爆裂",
-      description: `敌人死亡触发爆炸并造成范围伤害（可升级伤害）`,
+      description: `敌人死亡触发爆炸并造成范围伤害（可升级范围）`,
       type: "special",
       icon: "💣",
       apply: (player: Player) => {
-        const base = GAME_CONFIG.SKILLS.AOE_DAMAGE_BASE ?? 8;
-        const inc = GAME_CONFIG.SKILLS.AOE_DAMAGE_INCREMENT ?? 6;
         if (!player.hasAOEExplosion) {
           player.hasAOEExplosion = true;
-          player.aoeDamage = base;
           player.aoeRadius = GAME_CONFIG.SKILLS.AOE_RADIUS ?? 80;
         } else {
-          player.aoeDamage += inc;
+          // 每次升级增加30%爆炸范围，不增加伤害
+          player.aoeRadius = Math.floor(player.aoeRadius * 1.3);
         }
         return true;
       },
-      canSelect: () => true, // 可重复选择以提升伤害
+      canSelect: () => true, // 可重复选择以提升范围
     });
   }
 
