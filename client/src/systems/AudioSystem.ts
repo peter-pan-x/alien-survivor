@@ -6,6 +6,7 @@
 
 import { SoundEffectGenerator } from "./SoundEffectGenerator";
 import { BackgroundMusicGenerator } from "./BackgroundMusicGenerator";
+import { BossMusicGenerator } from "./BossMusicGenerator";
 import { SoundType, AUDIO_DEFAULT_SETTINGS } from "./SoundConfig";
 
 export interface AudioSettings {
@@ -24,9 +25,11 @@ export class AudioSystem {
   private audioContext: AudioContext | null = null;
   private soundGenerator: SoundEffectGenerator | null = null;
   private musicGenerator: BackgroundMusicGenerator | null = null;
+  private bossMusicGenerator: BossMusicGenerator | null = null;
   
   private settings: AudioSettings;
   private lastSoundTime: Map<string, number> = new Map();
+  private isBossActive: boolean = false; // Boss是否存在
 
   constructor(settings: Partial<AudioSettings> = {}) {
     this.settings = {
@@ -46,6 +49,7 @@ export class AudioSystem {
         this.audioContext = new AudioContextClass();
         this.soundGenerator = new SoundEffectGenerator(this.audioContext);
         this.musicGenerator = new BackgroundMusicGenerator(this.audioContext);
+      this.bossMusicGenerator = new BossMusicGenerator(this.audioContext);
       }
     } catch (e) {
       console.warn("[AudioSystem] Web Audio API not supported:", e);
@@ -73,6 +77,12 @@ export class AudioSystem {
 
     await this.ensureAudioContext();
     
+    // 如果Boss存在，播放Boss音乐
+    if (this.isBossActive) {
+      this.playBossMusic();
+      return;
+    }
+    
     if (!this.musicGenerator) {
       console.warn("[AudioSystem] Music generator not available");
       return;
@@ -87,11 +97,67 @@ export class AudioSystem {
   }
 
   /**
+   * 播放Boss战斗音乐
+   */
+  public async playBossMusic(): Promise<void> {
+    if (!this.musicEnabled) return;
+
+    await this.ensureAudioContext();
+    
+    if (!this.bossMusicGenerator) {
+      console.warn("[AudioSystem] Boss music generator not available");
+      return;
+    }
+
+    // 停止普通背景音乐
+    if (this.musicGenerator) {
+      this.musicGenerator.stop();
+    }
+
+    const volume = this.settings.musicVolume * this.settings.masterVolume;
+    this.bossMusicGenerator.start(volume);
+    this.isBossActive = true;
+  }
+
+  /**
+   * 停止Boss战斗音乐
+   */
+  public stopBossMusic(): void {
+    if (this.bossMusicGenerator) {
+      this.bossMusicGenerator.stop();
+    }
+    this.isBossActive = false;
+    
+    // Boss消失后恢复普通背景音乐
+    if (this.musicEnabled && this.musicGenerator) {
+      const volume = this.settings.musicVolume * this.settings.masterVolume;
+      this.musicGenerator.start(volume);
+    }
+  }
+
+  /**
+   * 设置Boss状态（由游戏引擎调用）
+   * @param active Boss是否激活
+   */
+  public setBossActive(active: boolean): void {
+    if (active && !this.isBossActive) {
+      // Boss出现
+      this.playBossMusic();
+    } else if (!active && this.isBossActive) {
+      // Boss消失
+      this.stopBossMusic();
+    }
+  }
+
+  /**
    * 停止背景音乐
    */
   public stopBackgroundMusic(): void {
     if (this.musicGenerator) {
       this.musicGenerator.stop();
+    }
+    if (this.bossMusicGenerator) {
+      this.bossMusicGenerator.stop();
     }
   }
 

@@ -92,8 +92,19 @@ export class BossSystem {
     boss: Boss,
     player: Player,
     deltaTime: number,
-    currentTime: number
+    currentTime: number,
+    canvasWidth: number,
+    canvasHeight: number
   ): void {
+    // 检查是否需要跳跃
+    this.checkAndExecuteJump(boss, player, currentTime, canvasWidth, canvasHeight);
+    
+    // 如果正在跳跃，处理跳跃动画
+    if (boss.isJumping) {
+      this.updateJumpAnimation(boss, currentTime);
+      return;
+    }
+    
     // Boss朝向玩家移动
     const dx = player.x - boss.x;
     const dy = player.y - boss.y;
@@ -140,6 +151,102 @@ export class BossSystem {
     return BOSS_TYPES[bossType];
   }
 
+  /**
+   * 检查并执行Boss跳跃
+   */
+  private checkAndExecuteJump(
+    boss: Boss,
+    player: Player,
+    currentTime: number,
+    canvasWidth: number,
+    canvasHeight: number
+  ): void {
+    // 检查跳跃冷却时间
+    if (currentTime - boss.lastJumpTime < boss.jumpCooldown) {
+      return;
+    }
+    
+    // 计算与玩家的距离
+    const dx = player.x - boss.x;
+    const dy = player.y - boss.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // 如果距离超过跳跃触发距离，执行跳跃
+    if (distance > boss.jumpRange) {
+      this.executeJump(boss, player, currentTime, canvasWidth, canvasHeight);
+    }
+  }
+  
+  /**
+   * 执行Boss跳跃
+   */
+  private executeJump(
+    boss: Boss,
+    player: Player,
+    currentTime: number,
+    canvasWidth: number,
+    canvasHeight: number
+  ): void {
+    // 记录跳跃起始位置
+    boss.jumpStartX = boss.x;
+    boss.jumpStartY = boss.y;
+    boss.jumpStartTime = currentTime;
+    boss.isJumping = true;
+    boss.lastJumpTime = currentTime;
+    
+    // 计算跳跃目标位置（在玩家周围的随机位置）
+    const angle = Math.random() * Math.PI * 2;
+    const jumpDistance = Math.min(canvasWidth, canvasHeight) * 0.3; // 跳跃到屏幕内30%的距离
+    
+    boss.jumpTargetX = player.x + Math.cos(angle) * jumpDistance;
+    boss.jumpTargetY = player.y + Math.sin(angle) * jumpDistance;
+    
+    // 确保目标位置在屏幕范围内
+    boss.jumpTargetX = Math.max(boss.radius, Math.min(canvasWidth - boss.radius, boss.jumpTargetX));
+    boss.jumpTargetY = Math.max(boss.radius, Math.min(canvasHeight - boss.radius, boss.jumpTargetY));
+    
+    console.log(`[BossSystem] Boss jumping to (${boss.jumpTargetX}, ${boss.jumpTargetY})`);
+  }
+  
+  /**
+   * 更新跳跃动画
+   */
+  private updateJumpAnimation(boss: Boss, currentTime: number): void {
+    if (!boss.jumpStartTime || boss.jumpStartX === undefined || boss.jumpStartY === undefined || 
+        boss.jumpTargetX === undefined || boss.jumpTargetY === undefined) {
+      return;
+    }
+    
+    const elapsed = currentTime - boss.jumpStartTime;
+    const progress = Math.min(elapsed / boss.jumpDuration, 1);
+    
+    // 使用缓动函数让跳跃更自然
+    const easeProgress = this.easeInOutCubic(progress);
+    
+    // 更新Boss位置
+    boss.x = boss.jumpStartX + (boss.jumpTargetX - boss.jumpStartX) * easeProgress;
+    boss.y = boss.jumpStartY + (boss.jumpTargetY - boss.jumpStartY) * easeProgress;
+    
+    // 跳跃完成
+    if (progress >= 1) {
+      boss.isJumping = false;
+      boss.jumpStartTime = undefined;
+      boss.jumpStartX = undefined;
+      boss.jumpStartY = undefined;
+      boss.jumpTargetX = undefined;
+      boss.jumpTargetY = undefined;
+      
+      console.log(`[BossSystem] Boss jump completed`);
+    }
+  }
+  
+  /**
+   * 缓动函数（进出三次）
+   */
+  private easeInOutCubic(t: number): number {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+  
   /**
    * 获取技能系统（用于高级用法）
    */

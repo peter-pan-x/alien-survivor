@@ -85,6 +85,21 @@ export const BACKGROUND_MUSIC_CONFIG: BackgroundMusicConfig = {
 };
 
 /**
+ * Boss战斗音乐配置
+ */
+export interface BossMusicConfig {
+  tempo: number; // 节拍速度（BPM）- 更快营造紧张感
+  baseVolume: number; // 基础音量 - 更大突出紧张氛围
+  loop: boolean; // 是否循环
+}
+
+export const BOSS_MUSIC_CONFIG: BossMusicConfig = {
+  tempo: 140, // 140 BPM - 更��的节奏
+  baseVolume: 0.25, // 更高的音量突出紧张感
+  loop: true,
+};
+
+/**
  * 8-bit风格音乐音符定义
  * 使用C大调音阶
  */
@@ -129,6 +144,45 @@ export const BACKGROUND_MELODY = [
   { note: MUSIC_NOTES.C4, duration: 0.25 },
   { note: MUSIC_NOTES.A3, duration: 0.25 },
   { note: MUSIC_NOTES.F3, duration: 0.25 },
+];
+
+/**
+ * Boss战斗背景音乐旋律序列
+ * 紧张、急促、有压迫感的旋律
+ */
+export const BOSS_MELODY = [
+  // 紧张的主旋律 - 小调音阶营造压迫感
+  { note: 261.63, duration: 0.2 },  // C4
+  { note: 261.63, duration: 0.2 },
+  { note: 293.66, duration: 0.2 },  // D4
+  { note: 293.66, duration: 0.2 },
+  { note: 311.13, duration: 0.2 },  // 升D4
+  { note: 311.13, duration: 0.2 },
+  { note: 329.63, duration: 0.3 },  // E4
+  { note: 329.63, duration: 0.3 },
+  
+  // 上升的旋律增加紧张感
+  { note: 349.23, duration: 0.2 },  // F4
+  { note: 392.00, duration: 0.2 },  // G4
+  { note: 415.30, duration: 0.2 },  // 降A4
+  { note: 440.00, duration: 0.4 },  // A4
+  
+  // 下行旋律缓解然后再次紧张
+  { note: 392.00, duration: 0.2 },  // G4
+  { note: 349.23, duration: 0.2 },  // F4
+  { note: 329.63, duration: 0.2 },  // E4
+  { note: 293.66, duration: 0.2 },  // D4
+  { note: 261.63, duration: 0.4 },  // C4
+  
+  // 重复主旋律
+  { note: 261.63, duration: 0.2 },
+  { note: 261.63, duration: 0.2 },
+  { note: 293.66, duration: 0.2 },
+  { note: 293.66, duration: 0.2 },
+  { note: 311.13, duration: 0.2 },
+  { note: 311.13, duration: 0.2 },
+  { note: 329.63, duration: 0.3 },
+  { note: 329.63, duration: 0.3 },
 ];
 
 /**

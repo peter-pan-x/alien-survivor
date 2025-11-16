@@ -15,8 +15,12 @@ export const BOSS_BASE_CONFIG = {
   HEALTH_MULTIPLIER: 100,
   DAMAGE_MULTIPLIER: 100,
   SPEED_MULTIPLIER: 0.5, // Boss移动速度较慢
-  RADIUS_MULTIPLIER: 3, // Boss体积较大
+  RADIUS_MULTIPLIER: 4.5, // Boss体积进一步增大（从3倍增至4.5倍）
   SKILL_COOLDOWN: 3000, // 技能冷却时间（毫秒）
+  // 跳跃机制配置
+  JUMP_RANGE: 800, // Boss跳跃距离（基于屏幕最大尺寸）
+  JUMP_COOLDOWN: 5000, // 跳跃冷却时间（毫秒）
+  JUMP_DURATION: 500, // 跳跃动画持续时间（毫秒）
 };
 
 /**
@@ -114,6 +118,12 @@ export function createBoss(
     skillCooldown: BOSS_BASE_CONFIG.SKILL_COOLDOWN,
     lastSkillTime: 0,
     skillData: {},
+    // 初始化跳跃机制参数
+    jumpRange: Math.max(canvasWidth, canvasHeight), // 使用屏幕最大尺寸作为跳跃距离
+    jumpCooldown: BOSS_BASE_CONFIG.JUMP_COOLDOWN,
+    jumpDuration: BOSS_BASE_CONFIG.JUMP_DURATION,
+    lastJumpTime: 0,
+    isJumping: false,
   };
 }
 

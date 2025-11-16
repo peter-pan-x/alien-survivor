@@ -70,6 +70,17 @@ export interface Boss {
   skillCooldown: number; // 技能冷却时间
   lastSkillTime: number; // 上次使用技能的时间
   skillData?: any; // Boss技能特定数据
+  // 跳跃机制相关
+  jumpRange: number; // 跳跃触发距离
+  jumpCooldown: number; // 跳跃冷却时间
+  jumpDuration: number; // 跳跃持续时间
+  lastJumpTime: number; // 上次跳跃时间
+  isJumping: boolean; // 是否正在跳跃
+  jumpStartTime?: number; // 跳跃开始时间
+  jumpStartX?: number; // 跳跃起始位置X
+  jumpStartY?: number; // 跳跃起始位置Y
+  jumpTargetX?: number; // 跳跃目标位置X
+  jumpTargetY?: number; // 跳跃目标位置Y
 }
 
 export interface Tree {

@@ -261,6 +261,8 @@ export class GameEngine {
     // 重置Boss系统
     this.bossSystem.reset();
     this.currentBoss = null;
+    // 停止Boss音乐（重置时）
+    this.audioSystem.setBossActive(false);
     // 重置树木系统
     this.treeSystem.reset();
     // 生成初始树木
@@ -365,6 +367,8 @@ export class GameEngine {
         );
         if (boss) {
           this.currentBoss = boss;
+          // Boss出现时播放紧张背景音乐
+          this.audioSystem.setBossActive(true);
         }
       }
       
@@ -513,7 +517,7 @@ export class GameEngine {
 
     // 更新Boss
     if (this.currentBoss) {
-      this.bossSystem.updateBoss(this.currentBoss, this.player, deltaTime, now);
+      this.bossSystem.updateBoss(this.currentBoss, this.player, deltaTime, now, this.width, this.height);
       
       // Boss技能攻击
       const bossBullets = this.bossSystem.executeBossSkill(
@@ -931,6 +935,8 @@ export class GameEngine {
             this.audioSystem.playSound("kill");
             this.bossSystem.removeBoss();
             this.currentBoss = null;
+            // 停止Boss音乐，恢复普通背景音乐
+            this.audioSystem.setBossActive(false);
             this.handleLevelUp();
           }
         }
@@ -1315,7 +1321,32 @@ export class GameEngine {
     const bossInfo = this.bossSystem.getBossInfo(this.currentBoss.type);
     const bossColor = bossInfo?.color || "#ef4444";
 
-    // 绘制Boss（使用更大的像素精灵）
+    // Boss跳跃特效
+    if (this.currentBoss.isJumping) {
+      // 跳跃时的光环效果
+      this.ctx.globalAlpha = 0.3 + Math.sin(Date.now() * 0.01) * 0.2;
+      this.pixelRenderer.drawPixelCircle(
+        this.currentBoss.x,
+        this.currentBoss.y,
+        this.currentBoss.radius + 20,
+        "transparent",
+        bossColor
+      );
+      this.ctx.globalAlpha = 1;
+      
+      // 跳跃时的残影效果
+      this.ctx.globalAlpha = 0.5;
+      this.pixelRenderer.drawPixelCircle(
+        this.currentBoss.x,
+        this.currentBoss.y,
+        this.currentBoss.radius,
+        "transparent",
+        bossColor
+      );
+      this.ctx.globalAlpha = 1;
+    }
+
+    // ���制Boss（使用更大的像素精灵）
     const bossSprite = [
       "   ███   ",
       "  █████  ",
@@ -1332,12 +1363,22 @@ export class GameEngine {
       " ": "transparent",
     };
 
+    // 跳跃时Boss闪烁效果
+    if (this.currentBoss.isJumping) {
+      const flash = Math.sin(Date.now() * 0.02) > 0;
+      if (flash) {
+        this.ctx.globalAlpha = 0.7;
+      }
+    }
+
     this.pixelRenderer.drawSprite(
       this.currentBoss.x,
       this.currentBoss.y,
       bossSprite,
       bossColors
     );
+
+    this.ctx.globalAlpha = 1;
 
     // Boss血条（更大更明显）
     const barWidth = this.currentBoss.radius * 4;
@@ -1363,7 +1404,8 @@ export class GameEngine {
     this.ctx.fillStyle = bossColor;
     this.ctx.font = "bold 14px monospace";
     this.ctx.textAlign = "center";
-    this.ctx.fillText(bossInfo?.name || "BOSS", screenPos.x, screenPos.y);
+    const bossName = this.currentBoss.isJumping ? `${bossInfo?.name || "BOSS"} (跳跃中!)` : (bossInfo?.name || "BOSS");
+    this.ctx.fillText(bossName, screenPos.x, screenPos.y);
 
       this.ctx.restore();
   }

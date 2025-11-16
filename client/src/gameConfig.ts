@@ -40,7 +40,7 @@ export const GAME_CONFIG = {
     BASE_HEALTH: 15,
     // 下调：每10击杀的血量增量，从5降至2（更平滑）
     HEALTH_INCREMENT_PER_10_KILLS: 2,
-    BASE_SPEED: 0.8, // 保持基础值不变（避免影响Boss），通过类型乘数整体-15%
+    BASE_SPEED: 0.6, // 降低基础速度25%（从0.8降至0.6），给玩家更多反应时间
     SPEED_INCREMENT_PER_20_KILLS: 0.15,
     MAX_SPEED: 2.5,
     INITIAL_SPAWN_INTERVAL: 1500,
@@ -60,21 +60,21 @@ export const GAME_CONFIG = {
       swarm: {
         radius: 16, // 从8增加到16，放大一倍
         healthMultiplier: 0.5,
-        speedMultiplier: 0.6, // -15%
+        speedMultiplier: 0.4, // 进一步降低速度（从0.6降至0.4）
         damage: 4, // 从3增加到4
         spawnWeight: 0.5,
       },
       rusher: {
         radius: 24, // 从12增加到24，放大一倍
         healthMultiplier: 1.0,
-        speedMultiplier: 0.85, // -15%
+        speedMultiplier: 0.68, // 进一步降低速度（从0.85降至0.68）
         damage: 6, // 从5增加到6
         spawnWeight: 0.3,
       },
       shooter: {
         radius: 20, // 从10增加到20，放大一倍
         healthMultiplier: 0.8,
-        speedMultiplier: 0.5, // -15%
+        speedMultiplier: 0.4, // 进一步降低速度（从0.5降至0.4）
         damage: 5, // 从4增加到5
         shootCooldown: 2000,
         shootRange: 250,
@@ -83,35 +83,35 @@ export const GAME_CONFIG = {
       elite: {
         radius: 36, // 从18增加到36，放大一倍
         healthMultiplier: 3.0,
-        speedMultiplier: 0.43, // -15%
+        speedMultiplier: 0.34, // 进一步降低速度（从0.43降至0.34）
         damage: 10, // 从8增加到10
         spawnWeight: 0.05,
       },
       spider: {
         radius: 18,
         healthMultiplier: 0.7,
-        speedMultiplier: 0.98, // -15%
+        speedMultiplier: 0.78, // 进一步降低速度（从0.98降至0.78）
         damage: 5,
         spawnWeight: 0.2,
       },
       crab: {
         radius: 22,
         healthMultiplier: 1.4,
-        speedMultiplier: 0.68, // -15%
+        speedMultiplier: 0.54, // 进一步降低速度（从0.68降至0.54）
         damage: 7,
         spawnWeight: 0.15,
       },
       bigeye: {
         radius: 20,
         healthMultiplier: 1.2,
-        speedMultiplier: 0.76, // -15%
+        speedMultiplier: 0.61, // 进一步降低速度（从0.76降至0.61）
         damage: 6,
         spawnWeight: 0.15,
       },
       frog: {
         radius: 20,
         healthMultiplier: 1.0,
-        speedMultiplier: 0.89, // -15%
+        speedMultiplier: 0.71, // 进一步降低速度（从0.89降至0.71）
         damage: 6,
         spawnWeight: 0.2,
       },
