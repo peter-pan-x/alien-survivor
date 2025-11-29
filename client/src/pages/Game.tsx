@@ -308,14 +308,10 @@ export default function Game() {
       {/* Canvas - 完全充满窗口 */}
       <canvas
         ref={canvasRef}
-        className={`w-full h-full ${
-          gameState === "menu" || gameState === "gameover" || gameState === "levelup"
-            ? "hidden"
-            : ""
-        }`}
+        className="w-full h-full"
         style={{
           touchAction: "none",
-          display: "block",
+          display: gameState === "menu" || gameState === "gameover" || gameState === "levelup" ? "none" : "block",
           imageRendering: "pixelated",
         }}
       />
