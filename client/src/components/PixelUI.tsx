@@ -182,16 +182,39 @@ function PixelMainMenu({
   // 检测移动端
   const isMobile = window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
   
-  // 全屏切换
+  // 全屏切换（兼容各种浏览器）
   const toggleFullscreen = async () => {
+    const doc = document as any;
+    const docEl = document.documentElement as any;
+    
     try {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
+      const isFullscreen = doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement;
+      
+      if (!isFullscreen) {
+        // 进入全屏
+        if (docEl.requestFullscreen) {
+          await docEl.requestFullscreen();
+        } else if (docEl.webkitRequestFullscreen) {
+          await docEl.webkitRequestFullscreen(); // Safari/iOS
+        } else if (docEl.mozRequestFullScreen) {
+          await docEl.mozRequestFullScreen(); // Firefox
+        } else if (docEl.msRequestFullscreen) {
+          await docEl.msRequestFullscreen(); // IE/Edge
+        }
       } else {
-        await document.exitFullscreen();
+        // 退出全屏
+        if (doc.exitFullscreen) {
+          await doc.exitFullscreen();
+        } else if (doc.webkitExitFullscreen) {
+          await doc.webkitExitFullscreen();
+        } else if (doc.mozCancelFullScreen) {
+          await doc.mozCancelFullScreen();
+        } else if (doc.msExitFullscreen) {
+          await doc.msExitFullscreen();
+        }
       }
     } catch (e) {
-      console.log('Fullscreen not supported');
+      console.log('Fullscreen error:', e);
     }
   };
   
@@ -339,15 +362,17 @@ function PixelLevelUp({
           </div>
         </div>
 
-        {/* 技能选项 - 移动端横向排列 */}
+        {/* 技能选项 - 移动端竖向排列 */}
         <div
           style={{
             display: 'flex',
-            flexDirection: isMobile ? 'row' : 'row',
+            flexDirection: isMobile ? 'column' : 'row',
             flexWrap: isMobile ? 'nowrap' : 'wrap',
-            gap: isMobile ? '8px' : '16px',
+            gap: isMobile ? '10px' : '16px',
             justifyContent: 'center',
-            overflowX: isMobile ? 'auto' : 'visible',
+            alignItems: 'center',
+            overflowY: isMobile ? 'auto' : 'visible',
+            maxHeight: isMobile ? '70vh' : 'none',
             paddingBottom: isMobile ? '8px' : '0',
           }}
         >
@@ -357,13 +382,18 @@ function PixelLevelUp({
               className="pixel-card"
               onClick={() => onSelectSkill(skill)}
               style={{
-                padding: isMobile ? '10px' : '20px',
+                padding: isMobile ? '12px 16px' : '20px',
                 textAlign: 'center',
                 cursor: 'pointer',
                 transition: 'transform 0.1s',
-                minWidth: isMobile ? '100px' : '180px',
-                maxWidth: isMobile ? '120px' : '220px',
+                width: isMobile ? '90%' : 'auto',
+                minWidth: isMobile ? 'auto' : '180px',
+                maxWidth: isMobile ? '100%' : '220px',
                 flex: isMobile ? '0 0 auto' : '1 1 180px',
+                display: 'flex',
+                flexDirection: isMobile ? 'row' : 'column',
+                alignItems: 'center',
+                gap: isMobile ? '12px' : '0',
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = 'scale(1.05)';
@@ -375,22 +405,23 @@ function PixelLevelUp({
               }}
             >
               {/* 图标 */}
-              <div style={{ fontSize: isMobile ? '28px' : '48px', marginBottom: isMobile ? '6px' : '12px' }}>{skill.icon}</div>
+              <div style={{ fontSize: isMobile ? '32px' : '48px', marginBottom: isMobile ? '0' : '12px', flexShrink: 0 }}>{skill.icon}</div>
 
-              {/* 名称 */}
-              <div className="pixel-text" style={{ fontSize: isMobile ? '12px' : '18px', marginBottom: isMobile ? '4px' : '8px' }}>
-                {skill.name}
-              </div>
+              {/* 名称和描述容器 */}
+              <div style={{ flex: 1, textAlign: isMobile ? 'left' : 'center' }}>
+                {/* 名称 */}
+                <div className="pixel-text" style={{ fontSize: isMobile ? '14px' : '18px', marginBottom: isMobile ? '2px' : '8px' }}>
+                  {skill.name}
+                </div>
 
-              {/* 描述 - 移动端简化 */}
-              <div className="pixel-label" style={{ 
-                fontSize: isMobile ? '9px' : '12px', 
-                color: '#cbd5e0',
-                lineHeight: '1.2',
-                maxHeight: isMobile ? '32px' : 'none',
-                overflow: 'hidden',
-              }}>
-                {skill.description}
+                {/* 描述 */}
+                <div className="pixel-label" style={{ 
+                  fontSize: isMobile ? '11px' : '12px', 
+                  color: '#cbd5e0',
+                  lineHeight: '1.3',
+                }}>
+                  {skill.description}
+                </div>
               </div>
 
               {/* 类型和稀有度标签 - 移动端隐藏类型 */}
