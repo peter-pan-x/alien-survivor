@@ -45,7 +45,7 @@ export class AudioManager {
     }
   }
 
-  private backgroundMusicSource: AudioBufferSourceNode | null = null;
+  private backgroundMusicSource: AudioScheduledSourceNode | null = null;
   private backgroundMusicGain: GainNode | null = null;
   private isPlayingMusic: boolean = false;
 

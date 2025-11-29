@@ -126,8 +126,9 @@ export class DeviceUtils {
    */
   static async lockOrientation(orientation: 'portrait' | 'landscape'): Promise<boolean> {
     try {
-      if (screen.orientation && screen.orientation.lock) {
-        await screen.orientation.lock(orientation);
+      const screenOrientation = (screen as any).orientation;
+      if (screenOrientation && screenOrientation.lock) {
+        await screenOrientation.lock(orientation);
         return true;
       }
       return false;
@@ -142,8 +143,9 @@ export class DeviceUtils {
    */
   static unlockOrientation(): void {
     try {
-      if (screen.orientation && screen.orientation.unlock) {
-        screen.orientation.unlock();
+      const orientation = (screen as any).orientation;
+      if (orientation && orientation.unlock) {
+        orientation.unlock();
       }
     } catch (error) {
       console.warn('Screen orientation unlock failed:', error);

@@ -60,7 +60,7 @@ export class EnhancedVirtualJoystick {
     this.setupEventListeners();
     
     // 监听设备变化
-    window.addEventListener('devicechange', this.handleDeviceChange.bind(this));
+    window.addEventListener('devicechange' as any, this.handleDeviceChange.bind(this));
   }
 
   private setupEventListeners() {
@@ -440,7 +440,7 @@ export class EnhancedVirtualJoystick {
     this.canvas.removeEventListener("mouseleave", this.handleMouseUp.bind(this));
     
     // 移除设备变化监听器
-    window.removeEventListener('devicechange', this.handleDeviceChange.bind(this));
+    window.removeEventListener('devicechange' as any, this.handleDeviceChange.bind(this));
     
     // 清理状态
     this.deactivateJoystick();
