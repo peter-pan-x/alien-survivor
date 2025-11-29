@@ -90,6 +90,11 @@ export default function Game() {
 
       gameEngineRef.current = engine;
 
+      // 将虚拟摇杆传递给引擎（用于渲染）
+      if (virtualJoystickRef.current) {
+        engine.setVirtualJoystick(virtualJoystickRef.current);
+      }
+
       // 初始化时按窗口尺寸自适配
       engine.resizeToWindow();
       virtualJoystickRef.current?.updateCanvasRect();

@@ -19,6 +19,7 @@ import { Boss } from "../gameTypes";
 import { TreeSystem } from "../systems/TreeSystem";
 import { EnemyIdGenerator } from "../utils/EnemyIdGenerator";
 import { ExpOrbSystem, EXP_ORB_CONFIG } from "../systems/ExpOrbSystem";
+import { VirtualJoystick } from "../utils/VirtualJoystick";
 
 /**
  * 游戏引擎核心类
@@ -71,6 +72,7 @@ export class GameEngine {
   // 输入状态
   private keys: Set<string> = new Set();
   private joystickInput: { x: number; y: number } = { x: 0, y: 0 };
+  private virtualJoystick: VirtualJoystick | null = null;
 
   // 游戏循环
   private animationId: number | null = null;
@@ -321,6 +323,13 @@ export class GameEngine {
    */
   public setJoystickInput(x: number, y: number): void {
     this.joystickInput = { x, y };
+  }
+
+  /**
+   * 设置虚拟摇杆引用（用于渲染）
+   */
+  public setVirtualJoystick(joystick: VirtualJoystick): void {
+    this.virtualJoystick = joystick;
   }
 
   /**
@@ -1453,6 +1462,11 @@ export class GameEngine {
     // 渲染屏幕空间的UI（HUD和性能监控）
     this.renderHUD();
     this.performanceMonitor.render(this.ctx);
+    
+    // 渲染虚拟摇杆（移动端）
+    if (this.virtualJoystick) {
+      this.virtualJoystick.render(this.ctx);
+    }
   }
 
   /**

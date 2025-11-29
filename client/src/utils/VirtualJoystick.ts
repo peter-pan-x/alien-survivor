@@ -15,54 +15,87 @@ export class VirtualJoystick {
   private touchId: number | null = null;
   private canvas: HTMLCanvasElement;
   private canvasRect: DOMRect;
+  private isMobile: boolean;
+
+  // 绑定的事件处理函数引用（用于正确移除监听器）
+  private boundHandleTouchStart: (e: TouchEvent) => void;
+  private boundHandleTouchMove: (e: TouchEvent) => void;
+  private boundHandleTouchEnd: (e: TouchEvent) => void;
+  private boundHandleMouseDown: (e: MouseEvent) => void;
+  private boundHandleMouseMove: (e: MouseEvent) => void;
+  private boundHandleMouseUp: () => void;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.canvasRect = canvas.getBoundingClientRect();
+    
+    // 检测是否为移动设备
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+      || ('ontouchstart' in window) 
+      || (navigator.maxTouchPoints > 0);
+    
+    // 预绑定事件处理函数
+    this.boundHandleTouchStart = this.handleTouchStart.bind(this);
+    this.boundHandleTouchMove = this.handleTouchMove.bind(this);
+    this.boundHandleTouchEnd = this.handleTouchEnd.bind(this);
+    this.boundHandleMouseDown = this.handleMouseDown.bind(this);
+    this.boundHandleMouseMove = this.handleMouseMove.bind(this);
+    this.boundHandleMouseUp = this.handleMouseUp.bind(this);
+    
     this.setupEventListeners();
+    
+    console.log('[VirtualJoystick] Initialized, isMobile:', this.isMobile);
   }
 
   private setupEventListeners() {
-    // 触摸事件
-    this.canvas.addEventListener("touchstart", this.handleTouchStart.bind(this), { passive: false });
-    this.canvas.addEventListener("touchmove", this.handleTouchMove.bind(this), { passive: false });
-    this.canvas.addEventListener("touchend", this.handleTouchEnd.bind(this), { passive: false });
-    this.canvas.addEventListener("touchcancel", this.handleTouchEnd.bind(this), { passive: false });
+    // 触摸事件 - 使用 document 级别监听以确保捕获所有触摸
+    document.addEventListener("touchstart", this.boundHandleTouchStart, { passive: false });
+    document.addEventListener("touchmove", this.boundHandleTouchMove, { passive: false });
+    document.addEventListener("touchend", this.boundHandleTouchEnd, { passive: false });
+    document.addEventListener("touchcancel", this.boundHandleTouchEnd, { passive: false });
 
     // 鼠标事件（用于桌面测试）
-    this.canvas.addEventListener("mousedown", this.handleMouseDown.bind(this));
-    this.canvas.addEventListener("mousemove", this.handleMouseMove.bind(this));
-    this.canvas.addEventListener("mouseup", this.handleMouseUp.bind(this));
-    this.canvas.addEventListener("mouseleave", this.handleMouseUp.bind(this));
+    this.canvas.addEventListener("mousedown", this.boundHandleMouseDown);
+    this.canvas.addEventListener("mousemove", this.boundHandleMouseMove);
+    this.canvas.addEventListener("mouseup", this.boundHandleMouseUp);
+    this.canvas.addEventListener("mouseleave", this.boundHandleMouseUp);
   }
 
   private handleTouchStart(e: TouchEvent) {
-    e.preventDefault();
-    
     // 只处理第一个触摸点
     if (this.touchId !== null) return;
     
     const touch = e.touches[0];
-    this.touchId = touch.identifier;
-    
     const rect = this.canvas.getBoundingClientRect();
     const x = touch.clientX - rect.left;
     const y = touch.clientY - rect.top;
     
-    // 只在屏幕下半部分激活摇杆
-    if (y > this.canvas.height / 2) {
+    // 检查触摸是否在 canvas 范围内
+    if (x < 0 || x > rect.width || y < 0 || y > rect.height) {
+      return;
+    }
+    
+    // 移动端：左半屏幕区域用于移动控制
+    // 桌面端：下半部分用于移动控制
+    const isValidArea = this.isMobile 
+      ? (x < rect.width * 0.6)  // 移动端：左侧60%区域
+      : (y > rect.height / 2);   // 桌面端：下半部分
+    
+    if (isValidArea) {
+      e.preventDefault();
+      this.touchId = touch.identifier;
       this.activateJoystick(x, y);
+      console.log('[VirtualJoystick] Touch started at:', x, y);
     }
   }
 
   private handleTouchMove(e: TouchEvent) {
-    e.preventDefault();
-    
     if (!this.joystick.active || this.touchId === null) return;
     
     // 找到对应的触摸点
     for (let i = 0; i < e.touches.length; i++) {
       if (e.touches[i].identifier === this.touchId) {
+        e.preventDefault(); // 只在找到对应触摸点时阻止默认行为
         const touch = e.touches[i];
         const rect = this.canvas.getBoundingClientRect();
         const x = touch.clientX - rect.left;
@@ -74,22 +107,16 @@ export class VirtualJoystick {
   }
 
   private handleTouchEnd(e: TouchEvent) {
-    e.preventDefault();
-    
     if (this.touchId === null) return;
     
     // 检查是否是当前的触摸点结束
-    let found = false;
     for (let i = 0; i < e.changedTouches.length; i++) {
       if (e.changedTouches[i].identifier === this.touchId) {
-        found = true;
+        this.deactivateJoystick();
+        this.touchId = null;
+        console.log('[VirtualJoystick] Touch ended');
         break;
       }
-    }
-    
-    if (found) {
-      this.deactivateJoystick();
-      this.touchId = null;
     }
   }
 
@@ -216,14 +243,16 @@ export class VirtualJoystick {
   }
 
   public destroy() {
-    this.canvas.removeEventListener("touchstart", this.handleTouchStart.bind(this));
-    this.canvas.removeEventListener("touchmove", this.handleTouchMove.bind(this));
-    this.canvas.removeEventListener("touchend", this.handleTouchEnd.bind(this));
-    this.canvas.removeEventListener("touchcancel", this.handleTouchEnd.bind(this));
-    this.canvas.removeEventListener("mousedown", this.handleMouseDown.bind(this));
-    this.canvas.removeEventListener("mousemove", this.handleMouseMove.bind(this));
-    this.canvas.removeEventListener("mouseup", this.handleMouseUp.bind(this));
-    this.canvas.removeEventListener("mouseleave", this.handleMouseUp.bind(this));
+    // 使用预绑定的函数引用移除监听器
+    document.removeEventListener("touchstart", this.boundHandleTouchStart);
+    document.removeEventListener("touchmove", this.boundHandleTouchMove);
+    document.removeEventListener("touchend", this.boundHandleTouchEnd);
+    document.removeEventListener("touchcancel", this.boundHandleTouchEnd);
+    this.canvas.removeEventListener("mousedown", this.boundHandleMouseDown);
+    this.canvas.removeEventListener("mousemove", this.boundHandleMouseMove);
+    this.canvas.removeEventListener("mouseup", this.boundHandleMouseUp);
+    this.canvas.removeEventListener("mouseleave", this.boundHandleMouseUp);
+    console.log('[VirtualJoystick] Destroyed');
   }
 }
 
