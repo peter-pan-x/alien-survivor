@@ -1775,7 +1775,7 @@ export class GameEngine {
       // 绘制像素精灵
       this.pixelRenderer.drawSprite(enemy.x, enemy.y, sprite, colors);
 
-      // 冰冻特效：蓝色染色 + 飘落雪花
+      // 冰冻特效：蓝色染色 + 飘落雪花（范围与敌人大小一致）
       if (enemy.frozenUntil && Date.now() < enemy.frozenUntil) {
         const now = Date.now();
         const r = enemy.radius;
@@ -1786,15 +1786,15 @@ export class GameEngine {
         this.ctx.arc(enemy.x, enemy.y, r, 0, Math.PI * 2);
         this.ctx.fill();
         
-        // 飘落的小雪花粒子（轻盈感）
-        for (let i = 0; i < 3; i++) {
+        // 飘落的小雪花粒子（范围限制在敌人范围内）
+        for (let i = 0; i < 2; i++) {
           const phase = ((now * 0.0015 + i * 120) % 1);
-          const px = enemy.x + Math.sin(now * 0.002 + i * 2) * r * 0.5;
-          const py = enemy.y - r * 0.6 + phase * r * 1.2;
+          const px = enemy.x + Math.sin(now * 0.002 + i * 2) * r * 0.3;
+          const py = enemy.y - r * 0.4 + phase * r * 0.8;
           
           // 雪花大小随下落渐小
-          const size = 2.5 * (1 - phase * 0.5);
-          const alpha = 0.8 * (1 - phase * 0.3);
+          const size = 2 * (1 - phase * 0.5);
+          const alpha = 0.7 * (1 - phase * 0.3);
           
           this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
           this.ctx.fillRect(px - size / 2, py - size / 2, size, size);
