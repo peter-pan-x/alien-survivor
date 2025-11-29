@@ -116,7 +116,7 @@ export function ResponsiveUI({
                 {Array.from({ length: player.maxLives }).map((_, i) => (
                   <span 
                     key={i} 
-                    className={i < player.lives ? "text-red-500" : "text-gray-600"}
+                    className={i < (player.lives ?? 0) ? "text-red-500" : "text-gray-600"}
                   >
                     ❤
                   </span>
