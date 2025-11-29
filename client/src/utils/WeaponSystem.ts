@@ -69,13 +69,14 @@ export class WeaponSystem {
       const droneX = player.x + Math.cos(angle) * orbitRadius;
       const droneY = player.y + Math.sin(angle) * orbitRadius;
 
-      // 检测与敌人的碰撞
+      // 检测与敌人的碰撞（优化：使用平方距离判定）
       for (const enemy of enemies) {
         const dx = droneX - enemy.x;
         const dy = droneY - enemy.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+        const distanceSq = dx * dx + dy * dy;
+        const radiusSum = droneRadius + enemy.radius;
 
-        if (distance < droneRadius + enemy.radius) {
+        if (distanceSq < radiusSum * radiusSum) {
           enemy.health -= damage * 0.016; // 每帧造成伤害（约60fps）
           
           // 生成粒子效果
@@ -145,10 +146,12 @@ export class WeaponSystem {
 
     weapon.lastActivation = currentTime;
 
-    // 找到最近的敌人
-    const chainCount = config.CHAIN_COUNT + weapon.level - 1;
+    // 连击数量：初始3个，每级+2
+    const chainCount = config.CHAIN_COUNT + (weapon.level - 1) * 2;
     const chainRange = config.CHAIN_RANGE;
-    const damage = config.BASE_DAMAGE * weapon.level;
+    // 伤害：玩家攻击力的1.5倍，每级增加50%
+    const baseDamage = player.attackDamage * 1.5;
+    const damage = Math.floor(baseDamage * Math.pow(1.5, weapon.level - 1));
 
     const targets = this.findNearestEnemies(player.x, player.y, enemies, chainCount, chainRange);
 
@@ -166,8 +169,8 @@ export class WeaponSystem {
     }
 
     // 触发闪电链视觉效果（存储在武器对象中，供渲染使用）
-    (weapon as any).lightningTargets = targets;
-    (weapon as any).lightningTime = currentTime;
+    weapon.lightningTargets = targets;
+    weapon.lightningTime = currentTime;
   }
 
   private renderLightningChain(
@@ -176,9 +179,8 @@ export class WeaponSystem {
     ctx: CanvasRenderingContext2D,
     currentTime: number
   ): void {
-    const w: any = weapon as any;
-    const targets: Enemy[] | undefined = w.lightningTargets;
-    const triggerTime: number | undefined = w.lightningTime;
+    const targets = weapon.lightningTargets;
+    const triggerTime = weapon.lightningTime;
     if (!targets || targets.length === 0 || triggerTime === undefined) return;
 
     // 仅在短时间内显示闪电（例如200ms）
@@ -206,14 +208,15 @@ export class WeaponSystem {
       const b = points[i + 1];
       this.drawJitteredLightning(ctx, a.x, a.y, b.x, b.y, amplitude, alpha);
 
-      // 在目标位置绘制小型冲击光晕
+      // 在目标位置绘制小型冲击光晕（无shadowBlur，性能优化）
       ctx.beginPath();
-      ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
-      ctx.strokeStyle = GAME_CONFIG.COLORS.WEAPON_LIGHTNING + '88';
-      ctx.lineWidth = 2;
-      ctx.shadowColor = GAME_CONFIG.COLORS.WEAPON_LIGHTNING;
-      ctx.shadowBlur = 10;
-      ctx.stroke();
+      ctx.arc(b.x, b.y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(168,85,247,${0.3 * alpha})`;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${0.8 * alpha})`;
+      ctx.fill();
     }
 
     ctx.restore();
@@ -234,7 +237,8 @@ export class WeaponSystem {
     const nx = -dy / len; // 法向量（用于抖动）
     const ny = dx / len;
 
-    const segments = Math.max(8, Math.min(16, Math.floor(len / 20)));
+    // 优化：减少段数，降低计算量
+    const segments = Math.max(4, Math.min(8, Math.floor(len / 40)));
     const points: { x: number; y: number }[] = [];
     for (let i = 0; i <= segments; i++) {
       const t = i / segments;
@@ -246,44 +250,32 @@ export class WeaponSystem {
       points.push({ x: px + nx * jitter, y: py + ny * jitter });
     }
 
-    // 多层描边，形成发光与核心
-    const outer = `rgba(168,85,247,${0.25 * alpha})`; // 紫色外层（半透明）
-    const mid = `rgba(168,85,247,${0.6 * alpha})`;
-    const core = `rgba(255,255,255,${0.9 * alpha})`;
+    // 优化：移除 shadowBlur（性能杀手），改用多层描边模拟发光
+    const outer = `rgba(168,85,247,${0.3 * alpha})`;
+    const mid = `rgba(200,150,255,${0.7 * alpha})`;
+    const core = `rgba(255,255,255,${0.95 * alpha})`;
 
-    // 外层发光
-    ctx.beginPath();
+    // 构建路径一次，复用绘制
+    const path = new Path2D();
     for (let i = 0; i < points.length; i++) {
       const p = points[i];
-      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+      if (i === 0) path.moveTo(p.x, p.y); else path.lineTo(p.x, p.y);
     }
+
+    // 外层（无 shadowBlur）
     ctx.strokeStyle = outer;
-    ctx.lineWidth = 6;
-    ctx.shadowColor = GAME_CONFIG.COLORS.WEAPON_LIGHTNING;
-    ctx.shadowBlur = 15;
-    ctx.stroke();
+    ctx.lineWidth = 5;
+    ctx.stroke(path);
 
     // 中层
-    ctx.beginPath();
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i];
-      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-    }
     ctx.strokeStyle = mid;
-    ctx.lineWidth = 3;
-    ctx.shadowBlur = 8;
-    ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.stroke(path);
 
     // 核心细线
-    ctx.beginPath();
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i];
-      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-    }
     ctx.strokeStyle = core;
     ctx.lineWidth = 1;
-    ctx.shadowBlur = 0;
-    ctx.stroke();
+    ctx.stroke(path);
   }
 
   private findNearestEnemies(
@@ -318,19 +310,21 @@ export class WeaponSystem {
     const damage = config.BASE_DAMAGE * weapon.level;
     const damageInterval = config.DAMAGE_INTERVAL;
 
-    // 检测力场范围内的敌人
+    // 检测力场范围内的敌人（优化：使用平方距离判定）
     for (const enemy of enemies) {
       const dx = enemy.x - player.x;
       const dy = enemy.y - player.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+      const distanceSq = dx * dx + dy * dy;
+      const radiusSum = fieldRadius + enemy.radius;
 
-      if (distance < fieldRadius + enemy.radius) {
+      if (distanceSq < radiusSum * radiusSum) {
         // 造成伤害（基于间隔）
         if (!enemy.lastShotTime || currentTime - enemy.lastShotTime > damageInterval) {
           enemy.health -= damage;
           enemy.lastShotTime = currentTime;
 
           // 击退效果
+          const distance = Math.sqrt(distanceSq); // 这里需要实际距离用于归一化
           const knockbackForce = config.KNOCKBACK_FORCE;
           const angle = Math.atan2(dy, dx);
           enemy.x += Math.cos(angle) * knockbackForce;

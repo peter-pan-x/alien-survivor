@@ -1,8 +1,9 @@
-import { Player, Enemy, Bullet, GameStats } from "../gameTypes";
+import { Player, Enemy, GameStats, Bullet } from "../gameTypes";
 import { GAME_CONFIG } from "../gameConfig";
 import { EnemyManager } from "../utils/EnemyManager";
 import { WeaponSystem } from "../utils/WeaponSystem";
 import { ParticlePool } from "../utils/ParticlePool";
+import { BulletPool } from "../utils/BulletPool";
 import { SpatialGrid } from "../utils/SpatialGrid";
 import { DamageNumberSystem } from "../utils/DamageNumbers";
 import { BackgroundRenderer } from "../utils/BackgroundRenderer";
@@ -13,9 +14,11 @@ import { SkillSystem } from "../systems/SkillSystem";
 import { PixelRenderer, PixelSprites, PixelColors } from "../utils/PixelRenderer";
 import { AudioSystem } from "../systems/AudioSystem";
 import { BossSystem } from "../systems/BossSystem";
-import { Boss, Tree } from "../gameTypes";
+import { BOSS_TYPES } from "../systems/BossConfig";
+import { Boss } from "../gameTypes";
 import { TreeSystem } from "../systems/TreeSystem";
 import { EnemyIdGenerator } from "../utils/EnemyIdGenerator";
+import { ExpOrbSystem, EXP_ORB_CONFIG } from "../systems/ExpOrbSystem";
 
 /**
  * 游戏引擎核心类
@@ -31,8 +34,8 @@ export class GameEngine {
 
   // 游戏实体
   private player: Player;
-  private bullets: Bullet[] = [];
-  private enemyBullets: Bullet[] = [];
+  private bulletPool: BulletPool;
+  private enemyBulletPool: BulletPool;
   private currentBoss: Boss | null = null;
 
   // 游戏系统
@@ -50,11 +53,13 @@ export class GameEngine {
   private bossSystem: BossSystem; // Boss系统（独立模块）
   private treeSystem: TreeSystem; // 树木系统
   private enemyIdGenerator: EnemyIdGenerator; // 敌人ID生成器
+  private expOrbSystem: ExpOrbSystem; // 经验球系统
 
   // 游戏状态
   private gameStartTime: number = 0;
   private lastShotTime: number = 0;
   private lastDamageTime: number = 0;
+  private lastTreeUpdateTime: number = 0; // 树木更新时间戳
   private shotToggle: boolean = false; // 双弹道左右交替偏移
   private stats: GameStats = {
     score: 0,
@@ -75,7 +80,7 @@ export class GameEngine {
   // 回调函数
   private onLevelUp?: () => void;
   private onGameOver?: () => void;
-  
+
   // 事件处理器
   private keyboardHandler: ((e: KeyboardEvent) => void) | null = null;
   private onStatsUpdate?: (stats: GameStats) => void;
@@ -92,27 +97,14 @@ export class GameEngine {
     // 设置像素风格渲染
     this.ctx.imageSmoothingEnabled = false;
 
-    // 设置画布尺寸（适配不同屏幕）
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    
-    if (isMobile) {
-      // 手机端：全屏显示
-      this.width = window.innerWidth;
-      this.height = window.innerHeight;
-    } else {
-      // 桌面端：限制最大尺寸
-    this.width = Math.min(window.innerWidth, GAME_CONFIG.CANVAS.MAX_WIDTH);
-    this.height = Math.min(
-        window.innerHeight - 100,
-      GAME_CONFIG.CANVAS.MAX_HEIGHT
-    );
-    }
-    
-    canvas.width = this.width;
-    canvas.height = this.height;
+    // 初始化画布尺寸（临时值，resizeToWindow将会正确设置）
+    this.width = 800;
+    this.height = 600;
 
     // 初始化游戏系统
     this.particlePool = new ParticlePool();
+    this.bulletPool = new BulletPool(500); // 玩家子弹池
+    this.enemyBulletPool = new BulletPool(200); // 敌人子弹池
     this.enemyManager = new EnemyManager();
     this.weaponSystem = new WeaponSystem(this.particlePool);
     this.spatialGrid = new SpatialGrid(this.width, this.height, 100);
@@ -124,13 +116,17 @@ export class GameEngine {
     this.bossSystem = new BossSystem(); // Boss系统（独立模块）
     this.treeSystem = new TreeSystem(); // 树木系统
     this.enemyIdGenerator = new EnemyIdGenerator(); // 敌人ID生成器
-    
+    this.expOrbSystem = new ExpOrbSystem(); // 经验球系统
+
     // 初始化技能系统（独立模块）
     this.skillSystem = new SkillSystem();
     this.skillSystem.setWeaponAddCallback((player, weaponType) => {
       this.weaponSystem.addWeapon(player, weaponType);
     });
-    
+    this.skillSystem.setMagnetizeAllCallback(() => {
+      this.expOrbSystem.magnetizeAll();
+    });
+
     // 在开发模式下启用性能监控
     this.performanceMonitor = new PerformanceMonitor(
       import.meta.env.DEV || false
@@ -145,40 +141,60 @@ export class GameEngine {
 
   /**
    * 依据当前窗口尺寸调整画布与视口（桌面/移动端自适配）
+   * 完全适配窗口大小，不限制宽高比，支持任意尺寸
    */
   public resizeToWindow(): void {
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    let dpr = window.devicePixelRatio || 1;
 
-    let newWidth: number;
-    let newHeight: number;
-
+    // 移动端：降低渲染分辨率以提升性能（85%质量）
     if (isMobile) {
-      // 移动端：充满可视窗口
-      newWidth = window.innerWidth;
-      newHeight = window.innerHeight;
-    } else {
-      // 桌面端：限制最大尺寸并预留顶部UI空间
-      newWidth = Math.min(window.innerWidth, GAME_CONFIG.CANVAS.MAX_WIDTH);
-      newHeight = Math.min(window.innerHeight - 100, GAME_CONFIG.CANVAS.MAX_HEIGHT);
+      dpr *= GAME_CONFIG.CANVAS.MOBILE_QUALITY_SCALE;
     }
+
+    // 限制DPR最大值，避免过高分辨率导致性能问题
+    dpr = Math.min(dpr, isMobile ? 2 : 3);
+
+    // 完全适配窗口尺寸，不限制宽高比
+    const displayWidth = window.innerWidth;
+    const displayHeight = window.innerHeight;
+
+    // 设置Canvas渲染分辨率（考虑高DPI和移动端优化）
+    const renderWidth = Math.floor(displayWidth * dpr);
+    const renderHeight = Math.floor(displayHeight * dpr);
 
     // 若尺寸未变化则跳过
-    if (newWidth === this.width && newHeight === this.height) return;
+    if (renderWidth === this.width && renderHeight === this.height) return;
 
-    this.width = newWidth;
-    this.height = newHeight;
-    this.canvas.width = this.width;
-    this.canvas.height = this.height;
+    // 更新内部尺寸记录
+    this.width = renderWidth;
+    this.height = renderHeight;
 
-    // 同步依赖视口尺寸的子系统
-    this.backgroundRenderer?.resize(this.width, this.height);
-    this.camera?.resize(this.width, this.height);
+    // 设置Canvas渲染分辨率
+    this.canvas.width = renderWidth;
+    this.canvas.height = renderHeight;
 
-    // 为空间网格的调试绘制更新宽高（功能不受影响）
+    // 设置CSS显示尺寸（与窗口完全一致）
+    this.canvas.style.width = `${displayWidth}px`;
+    this.canvas.style.height = `${displayHeight}px`;
+
+    // 重新应用像素风格设置
+    this.ctx.imageSmoothingEnabled = false;
+
+    // 缩放上下文以适配高DPI（使用逻辑像素）
+    this.ctx.scale(dpr, dpr);
+
+    // 同步依赖视口尺寸的子系统（使用显示尺寸，不是渲染分辨率）
+    this.backgroundRenderer?.resize(displayWidth, displayHeight);
+    this.camera?.resize(displayWidth, displayHeight);
+
+    // 更新空间网格（使用显示尺寸）
     if (this.spatialGrid) {
       this.spatialGrid.clear();
-      this.spatialGrid = new SpatialGrid(this.width, this.height, 100);
+      this.spatialGrid = new SpatialGrid(displayWidth, displayHeight, 100);
     }
+
+    console.log(`[GameEngine] Canvas resized to ${displayWidth}x${displayHeight} (DPR: ${dpr.toFixed(2)})`);
   }
 
   /**
@@ -192,7 +208,7 @@ export class GameEngine {
         this.performanceMonitor.setEnabled(!currentState);
       }
     };
-    
+
     window.addEventListener("keydown", this.keyboardHandler);
   }
 
@@ -223,17 +239,22 @@ export class GameEngine {
       lifeStealAmount: 0,
       // 初始子弹体积再次降低50%（从0.5降至0.25）
       bulletSizeMultiplier: 0.25,
-      // 暴击与AOE初始值
+      // 穿透相关
+      pierceCount: 0,
+      pierceDamageReduction: 0.5,
+      // 暴击与分裂子弹初始值
       critChance: 0.0,
       critMultiplier: GAME_CONFIG.SKILLS.CRIT_MULTIPLIER_BASE ?? 2.0,
       hasAOEExplosion: false,
-      aoeDamage: 0,
-      aoeRadius: GAME_CONFIG.SKILLS.AOE_RADIUS ?? 80,
+      aoeDamage: 0.3, // 分裂子弹伤害百分比（30%攻击力）
+      aoeRadius: 200, // 分裂子弹飞行距离
       // 记录稀有技能的选择次数（用于递减权重）
       rareSkillSelections: {},
-      // 记录技能出现次数（用于特殊技能“生命汲取”的出现递减）
+      // 记录技能出现次数（用于特殊技能"生命汲取"的出现递减）
       skillAppearances: {},
       weapons: [],
+      // 经验球拾取范围
+      pickupRange: EXP_ORB_CONFIG.BASE_PICKUP_RANGE,
     };
   }
 
@@ -242,8 +263,8 @@ export class GameEngine {
    */
   public reset(): void {
     this.player = this.createInitialPlayer();
-    this.bullets = [];
-    this.enemyBullets = [];
+    this.bulletPool.clear();
+    this.enemyBulletPool.clear();
     this.enemyManager.reset();
     this.particlePool.clear();
     this.damageNumbers.clear();
@@ -267,6 +288,8 @@ export class GameEngine {
     this.treeSystem.reset();
     // 生成初始树木
     this.treeSystem.generateTrees(this.player.x, this.player.y, 1000);
+    // 重置经验球系统
+    this.expOrbSystem.reset();
     // 停止背景音乐（重置时）
     this.audioSystem.stopBackgroundMusic();
   }
@@ -333,29 +356,29 @@ export class GameEngine {
    */
   private handleLevelUp(): void {
     let leveledUp = false;
-    
+
     // 循环检查是否可以升级
     while (true) {
       const expNeeded = this.calculateExpNeeded(this.player.level);
-      
+
       if (this.player.exp >= expNeeded) {
         this.player.exp -= expNeeded;
         this.player.level++;
         leveledUp = true;
-        
-        if (import.meta && (import.meta as any).env && (import.meta as any).env.DEV) {
+
+        if (import.meta.env.DEV) {
           console.log(`[GameEngine] Level up! Now level ${this.player.level}`);
         }
       } else {
         break;
       }
     }
-    
+
     // 只在升级后触发一次回调
     if (leveledUp && this.onLevelUp) {
       // 播放升级音效
       this.audioSystem.playSound("levelup");
-      
+
       // 检查是否需要生成Boss（每10级）
       if (this.bossSystem.shouldSpawnBoss(this.player.level)) {
         const boss = this.bossSystem.spawnBoss(
@@ -371,7 +394,7 @@ export class GameEngine {
           this.audioSystem.setBossActive(true);
         }
       }
-      
+
       this.onLevelUp();
     }
   }
@@ -382,7 +405,7 @@ export class GameEngine {
    */
   public applySkill(skillId: string): void {
     const success = this.skillSystem.applySkill(skillId, this.player);
-    
+
     if (!success) {
       console.warn(`[GameEngine] 技能应用失败: ${skillId}`);
       if (this.onError) {
@@ -415,8 +438,9 @@ export class GameEngine {
     // 播放背景音乐
     this.audioSystem.playBackgroundMusic(true);
     // 开局预生成树木，避免角色周围动态刷新造成突兀
+    // 预生成2500半径，确保屏幕外至少2屏范围内都有树木
     try {
-      const pregenerateRadius = GAME_CONFIG.TREES?.PREGENERATE_RADIUS ?? 1200;
+      const pregenerateRadius = GAME_CONFIG.TREES?.PREGENERATE_RADIUS ?? 2500;
       this.treeSystem.generateTrees(this.player.x, this.player.y, pregenerateRadius);
     } catch (e) {
       console.warn("[GameEngine] 预生成树木失败", e);
@@ -471,11 +495,11 @@ export class GameEngine {
     } catch (error) {
       console.error("游戏循环错误:", error);
       this.stop();
-      
+
       if (this.onError && error instanceof Error) {
         this.onError(error);
       }
-      
+
       if (this.onGameOver) {
         this.onGameOver();
       }
@@ -493,9 +517,10 @@ export class GameEngine {
       this.onStatsUpdate(this.stats);
     }
 
-    // 更新树木系统：若启用动态补充则在玩家周围生成，否则仅使用预生成内容
-    if (GAME_CONFIG.TREES?.DYNAMIC_UPDATE_ENABLED) {
-      this.treeSystem.updateTreesAroundPlayer(this.player.x, this.player.y, 800);
+    // 更新树木系统：每500ms检查一次远处树木（提前预加载屏幕外2屏范围）
+    if (!this.lastTreeUpdateTime || now - this.lastTreeUpdateTime > 500) {
+      this.lastTreeUpdateTime = now;
+      this.treeSystem.updateTreesAroundPlayer(this.player.x, this.player.y, 1500);
     }
 
     // 更新玩家位置
@@ -513,19 +538,78 @@ export class GameEngine {
 
     // 更新敌人
     const enemies = this.enemyManager.getEnemies();
-    this.updateEnemies(enemies, now, deltaTime);
+    const enemyBullets: Bullet[] = [];
+    this.enemyManager.updateEnemies(
+      this.player,
+      deltaTime,
+      this.width,
+      this.height,
+      now,
+      enemyBullets,
+      (x, y, r) => !!this.treeSystem.checkCollision(x, y, r)
+    );
+
+    // 将敌人生成的子弹添加到对象池（包含距离限制）
+    for (const bullet of enemyBullets) {
+      this.enemyBulletPool.acquire(
+        bullet.x,
+        bullet.y,
+        bullet.vx,
+        bullet.vy,
+        bullet.radius,
+        bullet.damage,
+        false, // 不穿透
+        undefined,
+        undefined,
+        true, // 是敌人子弹
+        bullet.startX,
+        bullet.startY,
+        bullet.maxDistance
+      );
+    }
+
+    // 处理燃烧DOT伤害（每0.5秒）
+    const burnTickInterval = 500; // 0.5秒
+    for (const enemy of enemies) {
+      if (enemy.burningUntil && now < enemy.burningUntil && enemy.burnDamagePerTick) {
+        if (!enemy.lastBurnTick || now - enemy.lastBurnTick >= burnTickInterval) {
+          enemy.health -= enemy.burnDamagePerTick;
+          enemy.lastBurnTick = now;
+          // 燃烧伤害数字和粒子
+          this.damageNumbers.add(enemy.x, enemy.y, enemy.burnDamagePerTick, false);
+          this.particlePool.createParticles(enemy.x, enemy.y, "#ff4500", 2);
+        }
+      }
+    }
 
     // 更新Boss
     if (this.currentBoss) {
       this.bossSystem.updateBoss(this.currentBoss, this.player, deltaTime, now, this.width, this.height);
-      
+
       // Boss技能攻击
       const bossBullets = this.bossSystem.executeBossSkill(
         this.currentBoss,
         this.player,
         now
       );
-      this.enemyBullets.push(...bossBullets);
+      // 将Boss子弹添加到对象池（包含距离限制）
+      for (const bullet of bossBullets) {
+        this.enemyBulletPool.acquire(
+          bullet.x,
+          bullet.y,
+          bullet.vx,
+          bullet.vy,
+          bullet.radius,
+          bullet.damage,
+          bullet.pierce,
+          bullet.pierceCount,
+          bullet.pierceDamageReduction,
+          true, // 是敌人子弹
+          bullet.startX,
+          bullet.startY,
+          bullet.maxDistance
+        );
+      }
     }
 
     // 玩家射击
@@ -543,6 +627,17 @@ export class GameEngine {
     // 更新粒子和伤害数字
     this.particlePool.update(deltaTime);
     this.damageNumbers.update(deltaTime);
+
+    // 更新经验球系统（玩家拾取范围跟随玩家属性）
+    this.expOrbSystem.setPickupRange(this.player.pickupRange);
+    const expCollected = this.expOrbSystem.update(this.player.x, this.player.y, deltaTime);
+    if (expCollected > 0) {
+      this.player.exp += expCollected;
+      // 播放拾取音效
+      this.audioSystem.playSound("hit");
+      // 处理升级
+      this.handleLevelUp();
+    }
 
     // 检查死亡：优先扣命并复活，命数耗尽才结束
     if (this.player.health <= 0) {
@@ -589,12 +684,12 @@ export class GameEngine {
     // 计算移动距离
     const moveLength = Math.sqrt(moveX * moveX + moveY * moveY);
     if (moveLength === 0) return null;
-    
+
     // 计算从树木中心到玩家的方向
     const toPlayerX = currentX - tree.x;
     const toPlayerY = currentY - tree.y;
     const distanceToTree = Math.sqrt(toPlayerX * toPlayerX + toPlayerY * toPlayerY);
-    
+
     if (distanceToTree === 0) {
       // 玩家正好在树木中心，随机方向推出
       const randomAngle = Math.random() * Math.PI * 2;
@@ -604,53 +699,53 @@ export class GameEngine {
         y: tree.y + Math.sin(randomAngle) * pushDistance
       };
     }
-    
+
     // 计算垂直方向（用于滑动）
     const toPlayerNormX = toPlayerX / distanceToTree;
     const toPlayerNormY = toPlayerY / distanceToTree;
-    
+
     // 垂直于从树木到玩家方向的两个滑动方向
     const slideDir1X = -toPlayerNormY;
     const slideDir1Y = toPlayerNormX;
     const slideDir2X = toPlayerNormY;
     const slideDir2Y = -toPlayerNormX;
-    
+
     // 选择与移动方向更接近的滑动方向
     const moveDirX = moveX / moveLength;
     const moveDirY = moveY / moveLength;
-    
+
     const dot1 = slideDir1X * moveDirX + slideDir1Y * moveDirY;
     const dot2 = slideDir2X * moveDirX + slideDir2Y * moveDirY;
-    
+
     const chosenSlideDirX = dot1 > dot2 ? slideDir1X : slideDir2X;
     const chosenSlideDirY = dot1 > dot2 ? slideDir1Y : slideDir2Y;
-    
+
     // 尝试滑动移动（较小距离）
     const slideDistance = Math.min(moveLength * 0.3, playerRadius * 0.8);
     const slideX = chosenSlideDirX * slideDistance;
     const slideY = chosenSlideDirY * slideDistance;
-    
+
     const slideNextX = currentX + slideX;
     const slideNextY = currentY + slideY;
-    
+
     // 检查滑动位置是否安全
     const slideCollision = this.treeSystem.checkCollision(slideNextX, slideNextY, playerRadius);
     if (!slideCollision) {
       return { x: slideNextX, y: slideNextY };
     }
-    
+
     // 如果滑动不安全，尝试沿移动方向稍微移动
     const smallMoveDistance = playerRadius * 0.3;
     const smallMoveX = moveDirX * smallMoveDistance;
     const smallMoveY = moveDirY * smallMoveDistance;
     const smallNextX = currentX + smallMoveX;
     const smallNextY = currentY + smallMoveY;
-    
+
     const smallCollision = this.treeSystem.checkCollision(smallNextX, smallNextY, playerRadius);
     if (!smallCollision) {
       return { x: smallNextX, y: smallNextY };
     }
-    
+
     return null;
   }
 
@@ -679,16 +774,16 @@ export class GameEngine {
 
       // 简化的移动逻辑：基于方向的碰撞检测
       const playerTreeRadius = this.player.radius * (GAME_CONFIG.COLLISION?.PLAYER_VS_TREE_RADIUS_MULTIPLIER ?? 0.85);
-      
+
       // 检查移动是否被阻挡
       const blockResult = this.treeSystem.checkPlayerMovementBlock(
-        this.player.x, 
-        this.player.y, 
-        moveX, 
-        moveY, 
+        this.player.x,
+        this.player.y,
+        moveX,
+        moveY,
         playerTreeRadius
       );
-      
+
       if (!blockResult.blocked) {
         // 没有被阻挡，直接移动
         this.player.x += moveX;
@@ -709,53 +804,8 @@ export class GameEngine {
   }
 
   /**
-   * 更新敌人
-   */
-  private updateEnemies(enemies: Enemy[], now: number, deltaTime: number): void {
-    for (const enemy of enemies) {
-      const dx = this.player.x - enemy.x;
-      const dy = this.player.y - enemy.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (enemy.type === "shooter") {
-        const shootRange = GAME_CONFIG.ENEMY.TYPES.shooter.shootRange || 250;
-        if (distance > shootRange) {
-          // 使用安全的归一化
-          const { x: normalizedX, y: normalizedY } = MathUtils.safeNormalize(dx, dy);
-          enemy.x += normalizedX * enemy.speed * deltaTime;
-          enemy.y += normalizedY * enemy.speed * deltaTime;
-        }
-
-        const shootCooldown =
-          GAME_CONFIG.ENEMY.TYPES.shooter.shootCooldown || 2000;
-        if (
-          distance <= shootRange &&
-          now - (enemy.lastShotTime || 0) > shootCooldown
-        ) {
-          const angle = Math.atan2(dy, dx);
-          this.enemyBullets.push({
-            x: enemy.x,
-            y: enemy.y,
-            vx: Math.cos(angle) * GAME_CONFIG.BULLET.SPEED * 0.6,
-            vy: Math.sin(angle) * GAME_CONFIG.BULLET.SPEED * 0.6,
-            radius: GAME_CONFIG.BULLET.BASE_RADIUS,
-            damage: GAME_CONFIG.ENEMY.TYPES.shooter.damage,
-            isEnemyBullet: true,
-          });
-          enemy.lastShotTime = now;
-        }
-      } else {
-        // 使用安全的归一化
-        const { x: normalizedX, y: normalizedY } = MathUtils.safeNormalize(dx, dy);
-        enemy.x += normalizedX * enemy.speed * deltaTime;
-        enemy.y += normalizedY * enemy.speed * deltaTime;
-      }
-    }
-  }
-
-  /**
    * 玩家射击
-   * 优化：多弹道时保持精准瞄准
+   * 优化：多弹道时保持精准瞄准，支持瞄准Boss
    */
   private handlePlayerShooting(now: number): void {
     // 使用安全除法避免除零
@@ -763,11 +813,15 @@ export class GameEngine {
     if (now - this.lastShotTime < shootInterval) return;
 
     const enemies = this.enemyManager.getEnemies();
-    if (enemies.length === 0) return;
+    
+    // 没有敌人也没有Boss时不射击
+    if (enemies.length === 0 && !this.currentBoss) return;
 
-    let closestEnemy = enemies[0];
+    let targetX = 0;
+    let targetY = 0;
     let minDistanceSq = Infinity;
 
+    // 检查所有敌人
     for (const enemy of enemies) {
       const dx = enemy.x - this.player.x;
       const dy = enemy.y - this.player.y;
@@ -775,15 +829,32 @@ export class GameEngine {
 
       if (distanceSq < minDistanceSq) {
         minDistanceSq = distanceSq;
-        closestEnemy = enemy;
+        targetX = enemy.x;
+        targetY = enemy.y;
       }
     }
+
+    // 检查Boss（也作为目标）
+    if (this.currentBoss) {
+      const dx = this.currentBoss.x - this.player.x;
+      const dy = this.currentBoss.y - this.player.y;
+      const distanceSq = dx * dx + dy * dy;
+
+      if (distanceSq < minDistanceSq) {
+        minDistanceSq = distanceSq;
+        targetX = this.currentBoss.x;
+        targetY = this.currentBoss.y;
+      }
+    }
+
+    // 没有找到目标
+    if (minDistanceSq === Infinity) return;
 
     if (minDistanceSq <= this.player.attackRange * this.player.attackRange) {
       // 主要瞄准角度
       const angle = Math.atan2(
-        closestEnemy.y - this.player.y,
-        closestEnemy.x - this.player.x
+        targetY - this.player.y,
+        targetX - this.player.x
       );
 
       // 生成弹道角度集合
@@ -810,20 +881,18 @@ export class GameEngine {
 
       const bulletRadius = GAME_CONFIG.BULLET.BASE_RADIUS * this.player.bulletSizeMultiplier;
       for (const bulletAngle of bulletAngles) {
-        this.bullets.push({
-          x: this.player.x,
-          y: this.player.y,
-          vx: Math.cos(bulletAngle) * GAME_CONFIG.BULLET.SPEED,
-          vy: Math.sin(bulletAngle) * GAME_CONFIG.BULLET.SPEED,
-          radius: bulletRadius,
-          damage: this.player.attackDamage,
-          pierce: this.player.hasPierce,
-          pierceCount: this.player.hasPierce ? this.player.pierceCount || 1 : 0,
-          currentPierceCount: 0,
-          hitEnemies: new Set<number>(),
-          originalDamage: this.player.attackDamage,
-          pierceDamageReduction: this.player.pierceDamageReduction || 0.5,
-        });
+        this.bulletPool.acquire(
+          this.player.x,
+          this.player.y,
+          Math.cos(bulletAngle) * GAME_CONFIG.BULLET.SPEED,
+          Math.sin(bulletAngle) * GAME_CONFIG.BULLET.SPEED,
+          bulletRadius,
+          this.player.attackDamage,
+          this.player.hasPierce,
+          this.player.hasPierce ? this.player.pierceCount || 1 : 0,
+          this.player.pierceDamageReduction || 0.5,
+          false // 不是敌人子弹
+        );
       }
 
       this.lastShotTime = now;
@@ -833,26 +902,39 @@ export class GameEngine {
   }
 
   /**
-   * 更新子弹
+   * 更新子弹（优化：使用对象池管理）
    */
   private updateBullets(deltaTime: number): void {
     // 无尽地图：基于与玩家距离清理子弹
     const maxBulletDistance = Math.max(this.width, this.height) * 1.5;
-    
-    // 更新玩家子弹
-    for (let i = this.bullets.length - 1; i >= 0; i--) {
-      const bullet = this.bullets[i];
+    const maxBulletDistanceSq = maxBulletDistance * maxBulletDistance;
+
+    // 更新玩家子弹位置
+    const bullets = this.bulletPool.getActive();
+    for (const bullet of bullets) {
       bullet.x += bullet.vx * deltaTime;
       bullet.y += bullet.vy * deltaTime;
+    }
 
-      // 基于与玩家距离清理
+    // 移除超出范围或碰撞树木的玩家子弹
+    this.bulletPool.removeIf((bullet) => {
+      // 检查分裂子弹飞行距离是否超过最大限制
+      if (bullet.maxDistance !== undefined && bullet.startX !== undefined && bullet.startY !== undefined) {
+        const travelDx = bullet.x - bullet.startX;
+        const travelDy = bullet.y - bullet.startY;
+        const travelDistSq = travelDx * travelDx + travelDy * travelDy;
+        if (travelDistSq > bullet.maxDistance * bullet.maxDistance) {
+          return true; // 超出最大飞行距离，移除子弹
+        }
+      }
+
+      // 基于与玩家距离清理（兜底机制）
       const dx = bullet.x - this.player.x;
       const dy = bullet.y - this.player.y;
       const distSq = dx * dx + dy * dy;
-      
-      if (distSq > maxBulletDistance * maxBulletDistance) {
-        this.bullets.splice(i, 1);
-        continue;
+
+      if (distSq > maxBulletDistanceSq) {
+        return true;
       }
 
       // 子弹与树木碰撞：树木阻挡子弹
@@ -865,26 +947,41 @@ export class GameEngine {
           "#22c55e",
           GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT
         );
-        this.bullets.splice(i, 1);
+        return true;
       }
-    }
+
+      return false;
+    });
 
     // 更新敌人子弹
     const maxEnemyBulletDistance = Math.max(this.width, this.height) * 2;
-    
-    for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
-      const bullet = this.enemyBullets[i];
+    const maxEnemyBulletDistanceSq = maxEnemyBulletDistance * maxEnemyBulletDistance;
+
+    const enemyBullets = this.enemyBulletPool.getActive();
+    for (const bullet of enemyBullets) {
       bullet.x += bullet.vx * deltaTime;
       bullet.y += bullet.vy * deltaTime;
+    }
 
-      // 基于与玩家距离清理
+    // 移除超出范围或碰撞树木的敌人子弹
+    this.enemyBulletPool.removeIf((bullet) => {
+      // 检查子弹飞行距离是否超过最大限制
+      if (bullet.maxDistance !== undefined && bullet.startX !== undefined && bullet.startY !== undefined) {
+        const travelDx = bullet.x - bullet.startX;
+        const travelDy = bullet.y - bullet.startY;
+        const travelDistSq = travelDx * travelDx + travelDy * travelDy;
+        if (travelDistSq > bullet.maxDistance * bullet.maxDistance) {
+          return true; // 超出最大飞行距离，移除子弹
+        }
+      }
+
+      // 基于与玩家距离清理（兜底机制）
       const dx = bullet.x - this.player.x;
       const dy = bullet.y - this.player.y;
       const distSq = dx * dx + dy * dy;
-      
-      if (distSq > maxEnemyBulletDistance * maxEnemyBulletDistance) {
-        this.enemyBullets.splice(i, 1);
-        continue;
+
+      if (distSq > maxEnemyBulletDistanceSq) {
+        return true;
       }
 
       // 敌人子弹与树木碰撞：树木阻挡子弹
@@ -896,9 +993,11 @@ export class GameEngine {
           "#15803d",
           GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT
         );
-        this.enemyBullets.splice(i, 1);
+        return true;
       }
-    }
+
+      return false;
+    });
   }
 
   /**
@@ -919,14 +1018,17 @@ export class GameEngine {
     enemies.forEach((e) => this.spatialGrid.insert(e));
 
     // 子弹与敌人碰撞 (修复子弹穿透问题)
-    for (let i = this.bullets.length - 1; i >= 0; i--) {
-      const bullet = this.bullets[i];
+    const bullets = this.bulletPool.getActive();
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const bullet = bullets[i];
       // 动态查询范围：子弹半径 + 敌人最大半径 + 安全边距
-      const queryRadius = bullet.radius + 30 + 10;
+      const queryRadius = bullet.radius +
+        GAME_CONFIG.COLLISION.BULLET_QUERY_EXTRA_RADIUS +
+        GAME_CONFIG.COLLISION.BULLET_QUERY_SAFETY_MARGIN;
       const nearbyEnemies = this.spatialGrid.getNearby(bullet.x, bullet.y, queryRadius);
 
       let shouldRemoveBullet = false;
-      
+
       for (const enemy of nearbyEnemies) {
         // 检查敌人是否已经被这颗子弹击中过
         if (bullet.hitEnemies && bullet.hitEnemies.has(enemy.id!)) {
@@ -940,29 +1042,66 @@ export class GameEngine {
         )) {
           // 计算伤害（考虑穿透伤害递减）
           let damage = bullet.damage;
-          
+
           // 如果是穿透子弹，计算递减伤害
           if (bullet.pierce && bullet.currentPierceCount! > 0) {
             const reductionMultiplier = Math.pow(bullet.pierceDamageReduction!, bullet.currentPierceCount!);
             damage = Math.floor(bullet.originalDamage! * reductionMultiplier);
           }
-          
+
           // 计算暴击
           let isCrit = false;
           if (Math.random() < this.player.critChance) {
             damage = Math.floor(damage * this.player.critMultiplier);
             isCrit = true;
           }
-          
+
+          // 冰冻射击伤害加成
+          if (this.player.hasFrostShot && this.player.frostDamageBonus) {
+            damage = Math.floor(damage * (1 + this.player.frostDamageBonus));
+          }
+
+          // 火焰攻击伤害加成
+          if (this.player.hasFlameAttack && this.player.flameDamageBonus) {
+            damage = Math.floor(damage * (1 + this.player.flameDamageBonus));
+          }
+
+          // 遇强则强：额外附带生命值百分比伤害
+          if (this.player.strengthBonus) {
+            const bonusDamage = Math.floor(this.player.health * this.player.strengthBonus);
+            damage += bonusDamage;
+          }
+
           // 应用伤害
           enemy.health -= damage;
-          this.damageNumbers.add(enemy.x, enemy.y, damage);
+          this.damageNumbers.add(enemy.x, enemy.y, damage, isCrit);
 
-          // 创建粒子效果
+          // 冰冻效果：击中后冻结敌人
+          if (this.player.hasFrostShot && this.player.frostDuration) {
+            enemy.frozenUntil = Date.now() + this.player.frostDuration;
+            // 冰冻粒子效果
+            this.particlePool.createParticles(enemy.x, enemy.y, "#00bfff", 4);
+          }
+
+          // 燃烧效果：击中后施加燃烧DOT
+          if (this.player.hasFlameAttack && this.player.flameBurnDuration) {
+            const now = Date.now();
+            enemy.burningUntil = now + this.player.flameBurnDuration;
+            enemy.burnDamagePerTick = Math.floor(this.player.attackDamage * (this.player.flameBurnDamage || 0.1));
+            enemy.lastBurnTick = now;
+            // 燃烧粒子效果
+            this.particlePool.createParticles(enemy.x, enemy.y, "#ff4500", 4);
+          }
+
+          // 创建粒子效果（根据当前效果选择颜色）
+          let hitColor = GAME_CONFIG.COLORS.PARTICLE_ENEMY_HIT;
+          if (this.player.hasFlameAttack) hitColor = "#ff6600";
+          else if (this.player.hasFrostShot) hitColor = "#87ceeb";
+          
           this.particlePool.createParticles(
             enemy.x,
             enemy.y,
-            GAME_CONFIG.COLORS.PARTICLE_ENEMY_HIT,
+            hitColor,
             isCrit ? GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT * 2 : GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT
           );
 
@@ -977,9 +1116,9 @@ export class GameEngine {
           // 处理穿透逻辑
           if (bullet.pierce) {
             bullet.currentPierceCount!++;
-            
-            // 检查是否达到穿透上限
-            if (bullet.currentPierceCount >= bullet.pierceCount) {
+
+            // 检查是否达到穿透上限（> 而非 >=，确保能穿透pierceCount个敌人）
+            if (bullet.currentPierceCount !== undefined && bullet.pierceCount !== undefined && bullet.currentPierceCount > bullet.pierceCount) {
               shouldRemoveBullet = true;
             }
           } else {
@@ -1000,18 +1139,43 @@ export class GameEngine {
           bullet.x, bullet.y, bullet.radius,
           this.currentBoss.x, this.currentBoss.y, this.currentBoss.radius
         )) {
-          // Boss也可被暴击
           let damage = bullet.damage;
+          let isCrit = false;
+
+          // Boss暴击
           if (Math.random() < this.player.critChance) {
             damage = Math.floor(damage * this.player.critMultiplier);
+            isCrit = true;
           }
+
+          // 冰冻射击伤害加成
+          if (this.player.hasFrostShot && this.player.frostDamageBonus) {
+            damage = Math.floor(damage * (1 + this.player.frostDamageBonus));
+          }
+
+          // 火焰攻击伤害加成
+          if (this.player.hasFlameAttack && this.player.flameDamageBonus) {
+            damage = Math.floor(damage * (1 + this.player.flameDamageBonus));
+          }
+
+          // 遇强则强：额外附带生命值百分比伤害
+          if (this.player.strengthBonus) {
+            const bonusDamage = Math.floor(this.player.health * this.player.strengthBonus);
+            damage += bonusDamage;
+          }
+
           this.currentBoss.health -= damage;
-          this.damageNumbers.add(this.currentBoss.x, this.currentBoss.y, damage);
+          this.damageNumbers.add(this.currentBoss.x, this.currentBoss.y, damage, isCrit);
+
+          // 粒子颜色根据buff类型
+          let hitColor = GAME_CONFIG.COLORS.PARTICLE_ENEMY_HIT;
+          if (this.player.hasFlameAttack) hitColor = "#ff6600";
+          else if (this.player.hasFrostShot) hitColor = "#87ceeb";
 
           this.particlePool.createParticles(
             this.currentBoss.x,
             this.currentBoss.y,
-            GAME_CONFIG.COLORS.PARTICLE_ENEMY_HIT,
+            hitColor,
             GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT * 2
           );
 
@@ -1027,23 +1191,32 @@ export class GameEngine {
               GAME_CONFIG.PARTICLE.DEATH_PARTICLE_COUNT * 3
             );
             this.stats.killCount++;
-            this.stats.score += 1000; // Boss击败奖励
-            this.player.exp +=
-              GAME_CONFIG.LEVELING.EXP_PER_KILL *
-              (GAME_CONFIG.LEVELING.BOSS_EXP_REWARD_MULTIPLIER ?? 50); // Boss经验奖励
+            this.stats.score += GAME_CONFIG.LEVELING.SCORE_PER_BOSS_KILL;
+            // Boss死亡生成大量经验球
+            const bossExpTotal = GAME_CONFIG.LEVELING.EXP_PER_KILL *
+              (GAME_CONFIG.LEVELING.BOSS_EXP_REWARD_MULTIPLIER ?? 50);
+            // 分成多个经验球散落
+            const orbCount = 10;
+            for (let j = 0; j < orbCount; j++) {
+              const angle = (j / orbCount) * Math.PI * 2;
+              const distance = 30 + Math.random() * 50;
+              const orbX = this.currentBoss.x + Math.cos(angle) * distance;
+              const orbY = this.currentBoss.y + Math.sin(angle) * distance;
+              this.expOrbSystem.spawnOrb(orbX, orbY, Math.ceil(bossExpTotal / orbCount));
+            }
             this.audioSystem.playSound("kill");
             this.bossSystem.removeBoss();
             this.currentBoss = null;
             // 停止Boss音乐，恢复普通背景音乐
             this.audioSystem.setBossActive(false);
-            this.handleLevelUp();
           }
         }
       }
 
       // 移除应该消失的子弹
       if (shouldRemoveBullet) {
-        this.bullets.splice(i, 1);
+        this.bulletPool.release(bullet);
+        bullets.splice(i, 1);
       }
     }
 
@@ -1058,34 +1231,45 @@ export class GameEngine {
           GAME_CONFIG.PARTICLE.DEATH_PARTICLE_COUNT
         );
 
-        // 敌人死亡触发AOE爆炸（固定33%玩家伤害）
+        // 敌人死亡触发分裂子弹（向四周发射3颗子弹）
         if (this.player.hasAOEExplosion) {
-          const aoeRadius = this.player.aoeRadius;
-          const explosionDamage = Math.floor(this.player.attackDamage * 0.33);
-          const nearby = this.spatialGrid.getNearby(enemy.x, enemy.y, aoeRadius);
-          
-          for (const e of nearby) {
-            if (e === enemy) continue;
-            const dx = e.x - enemy.x;
-            const dy = e.y - enemy.y;
-            const distSq = dx * dx + dy * dy;
-            if (distSq <= aoeRadius * aoeRadius) {
-              e.health -= explosionDamage;
-              this.damageNumbers.add(e.x, e.y, explosionDamage);
-              this.particlePool.createParticles(
-                e.x,
-                e.y,
-                GAME_CONFIG.COLORS.PARTICLE_ENEMY_HIT,
-                GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT
-              );
-            }
+          const splitDamage = Math.floor(this.player.attackDamage * this.player.aoeDamage);
+          const splitRange = this.player.aoeRadius;
+          const bulletCount = 3;
+          const bulletSpeed = 4;
+          // 使用与玩家子弹相同的大小
+          const bulletRadius = GAME_CONFIG.BULLET.BASE_RADIUS * this.player.bulletSizeMultiplier;
+
+          // 向3个方向发射子弹（均匀分布360度）
+          for (let b = 0; b < bulletCount; b++) {
+            const angle = (b / bulletCount) * Math.PI * 2 + Math.random() * 0.5; // 略微随机偏移
+            const vx = Math.cos(angle) * bulletSpeed;
+            const vy = Math.sin(angle) * bulletSpeed;
+
+            // 添加分裂子弹到玩家子弹池（会伤害敌人）
+            this.bulletPool.acquire(
+              enemy.x,
+              enemy.y,
+              vx,
+              vy,
+              bulletRadius,
+              splitDamage,
+              false, // 不穿透
+              undefined,
+              undefined,
+              false, // 不是敌人子弹
+              enemy.x, // 起始位置
+              enemy.y,
+              splitRange // 最大飞行距离
+            );
           }
-          // 爆炸中心更强的粒子效果
+
+          // 分裂效果粒子
           this.particlePool.createParticles(
             enemy.x,
             enemy.y,
-            GAME_CONFIG.COLORS.PARTICLE_ENEMY_DEATH,
-            GAME_CONFIG.PARTICLE.DEATH_PARTICLE_COUNT
+            "#ffaa00", // 橙色粒子
+            6
           );
         }
 
@@ -1103,11 +1287,8 @@ export class GameEngine {
           );
         }
 
-        // 添加经验
-        this.player.exp += GAME_CONFIG.LEVELING.EXP_PER_KILL;
-        
-        // 处理升级（可能升多级）
-        this.handleLevelUp();
+        // 生成经验球（不再直接给经验）
+        this.expOrbSystem.spawnOrb(enemy.x, enemy.y, GAME_CONFIG.LEVELING.EXP_PER_KILL);
 
         enemies.splice(i, 1);
       }
@@ -1115,78 +1296,80 @@ export class GameEngine {
 
     this.enemyManager.setEnemies(enemies);
 
-    // 添加游戏开始后的短暂保护期（前2秒）
+    // 添加游戏开始后的短暂保护期
     const timeSinceStart = now - this.gameStartTime;
-    const hasStartupProtection = timeSinceStart < 2000; // 2秒保护期
+    const hasStartupProtection = timeSinceStart < GAME_CONFIG.PLAYER.STARTUP_PROTECTION_TIME;
 
     // 敌人子弹与玩家碰撞 (优化: 使用距离平方)
+    const enemyBullets = this.enemyBulletPool.getActive();
     if (!hasStartupProtection) {
-    for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
-      const bullet = this.enemyBullets[i];
-      
-      // 使用优化的碰撞检测
-      if (MathUtils.checkCircleCollision(
-        bullet.x, bullet.y, bullet.radius,
-        this.player.x, this.player.y, this.player.radius
-      )) {
-        if (
-          now - this.lastDamageTime >
-          GAME_CONFIG.PLAYER.DAMAGE_COOLDOWN
-        ) {
-          this.applyDamage(bullet.damage);
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const bullet = enemyBullets[i];
 
-          this.lastDamageTime = now;
-          this.particlePool.createParticles(
-            this.player.x,
-            this.player.y,
-            GAME_CONFIG.COLORS.PARTICLE_PLAYER_HIT,
-            GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT
-          );
-        }
+        // 使用优化的碰撞检测
+        if (MathUtils.checkCircleCollision(
+          bullet.x, bullet.y, bullet.radius,
+          this.player.x, this.player.y, this.player.radius
+        )) {
+          if (
+            now - this.lastDamageTime >
+            GAME_CONFIG.PLAYER.DAMAGE_COOLDOWN
+          ) {
+            this.applyDamage(bullet.damage);
 
-        this.enemyBullets.splice(i, 1);
+            this.lastDamageTime = now;
+            this.particlePool.createParticles(
+              this.player.x,
+              this.player.y,
+              GAME_CONFIG.COLORS.PARTICLE_PLAYER_HIT,
+              GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT
+            );
+          }
+
+          this.enemyBulletPool.release(bullet);
+          enemyBullets.splice(i, 1);
         }
       }
     }
 
     // 玩家与敌人碰撞 (优化: 使用空间网格和距离平方)
-    
+
     if (!hasStartupProtection) {
-    const playerEnemyRadius = this.player.radius * (GAME_CONFIG.COLLISION?.PLAYER_VS_ENEMY_PLAYER_RADIUS_MULTIPLIER ?? 0.7) * 0.67; // 减少33%
-    const nearbyEnemiesForPlayer = this.spatialGrid.getNearby(
-      this.player.x,
-      this.player.y,
-      playerEnemyRadius + 30 // 缩小后的玩家半径 + 安全边距
-    );
-    
-    for (const enemy of nearbyEnemiesForPlayer) {
-      // 使用优化的碰撞检测
-      if (MathUtils.checkCircleCollision(
-        this.player.x, this.player.y, playerEnemyRadius,
-        enemy.x, enemy.y, enemy.radius * (GAME_CONFIG.COLLISION?.ENEMY_VS_PLAYER_ENEMY_RADIUS_MULTIPLIER ?? 0.85) * 0.67 // 减少33%
-      )) {
-        if (
-          now - this.lastDamageTime >
-          GAME_CONFIG.PLAYER.DAMAGE_COOLDOWN
-        ) {
-          const typeConfig = GAME_CONFIG.ENEMY.TYPES[enemy.type];
-          const baseDamage = typeConfig.damage;
-          // 怪物伤害随等级每级增加22%（乘法增长）
-          const levelMultiplier = Math.pow(
-            GAME_CONFIG.ENEMY.DAMAGE_PER_LEVEL_MULTIPLIER ?? 1.22,
-            this.player.level - 1
-          );
-          const scaledDamage = baseDamage * levelMultiplier;
+      const playerEnemyRadius = this.player.radius * (GAME_CONFIG.COLLISION?.PLAYER_VS_ENEMY_PLAYER_RADIUS_MULTIPLIER ?? 0.7) * 0.67; // 减少33%
+      const nearbyEnemiesForPlayer = this.spatialGrid.getNearby(
+        this.player.x,
+        this.player.y,
+        playerEnemyRadius + 30 // 缩小后的玩家半径 + 安全边距
+      );
 
-          this.applyDamage(scaledDamage);
+      for (const enemy of nearbyEnemiesForPlayer) {
+        // 使用优化的碰撞检测
+        if (MathUtils.checkCircleCollision(
+          this.player.x, this.player.y, playerEnemyRadius,
+          enemy.x, enemy.y, enemy.radius * (GAME_CONFIG.COLLISION?.ENEMY_VS_PLAYER_ENEMY_RADIUS_MULTIPLIER ?? 0.85) * 0.67 // 减少33%
+        )) {
+          if (
+            now - this.lastDamageTime >
+            GAME_CONFIG.PLAYER.DAMAGE_COOLDOWN
+          ) {
+            const typeConfig = GAME_CONFIG.ENEMY.TYPES[enemy.type];
+            const baseDamage = typeConfig.damage;
+            // 怪物伤害随等级每级增加22%（乘法增长）
+            const levelMultiplier = Math.pow(
+              GAME_CONFIG.ENEMY.DAMAGE_PER_LEVEL_MULTIPLIER ?? 1.22,
+              this.player.level - 1
+            );
+            const scaledDamage = baseDamage * levelMultiplier;
 
-          this.lastDamageTime = now;
-          this.particlePool.createParticles(
-            this.player.x,
-            this.player.y,
-            GAME_CONFIG.COLORS.PARTICLE_PLAYER_HIT,
-            GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT
-          );
+            this.applyDamage(scaledDamage);
+
+            this.lastDamageTime = now;
+            this.particlePool.createParticles(
+              this.player.x,
+              this.player.y,
+              GAME_CONFIG.COLORS.PARTICLE_PLAYER_HIT,
+              GAME_CONFIG.PARTICLE.HIT_PARTICLE_COUNT
+            );
           }
         }
       }
@@ -1233,10 +1416,10 @@ export class GameEngine {
     } else {
       this.player.health -= damage;
     }
-    
+
     // 确保生命值在有效范围内
     this.player.health = MathUtils.clamp(this.player.health, 0, this.player.maxHealth);
-    
+
     // 播放受伤音效
     this.audioSystem.playSound("damage");
   }
@@ -1246,7 +1429,7 @@ export class GameEngine {
    * 无尽地图模式：使用相机变换渲染世界
    */
   private render(now: number): void {
-    
+
     // 绘制无限滚动背景（不需要变换）
     this.backgroundRenderer.draw(this.ctx, this.camera.x, this.camera.y);
 
@@ -1261,6 +1444,7 @@ export class GameEngine {
     this.renderPlayer();
     this.weaponSystem.renderWeapons(this.player, this.ctx, now);
     this.particlePool.render(this.ctx);
+    this.expOrbSystem.render(this.ctx); // 渲染经验球
     this.damageNumbers.render(this.ctx);
 
     // 恢复变换
@@ -1272,66 +1456,260 @@ export class GameEngine {
   }
 
   /**
-   * 渲染树木 - 像素风格
+   * 渲染树木 - 异星风格像素植物（增强像素感）
    */
   private renderTrees(): void {
     this.ctx.save();
-    this.ctx.imageSmoothingEnabled = false;
 
-    // 仅渲染玩家附近的树木，提升性能
+    const pixelSize = 4;
+    // 辅助函数：强制对齐到像素网格
+    const align = (v: number) => Math.floor(v / pixelSize) * pixelSize;
+    
     const trees = this.treeSystem.getTreesInArea(this.player.x, this.player.y, 900);
+    
     for (const tree of trees) {
-      let sprite: string[];
-      let colors: Record<string, string>;
-      switch (tree.type) {
-        case "small":
-          sprite = PixelSprites.treeSmall;
-          colors = PixelColors.treeSmall;
-          break;
-        case "medium":
-          sprite = PixelSprites.treeMedium;
-          colors = PixelColors.treeMedium;
-          break;
-        case "large":
-          sprite = PixelSprites.treeLarge;
-          colors = PixelColors.treeLarge;
-          break;
-        default:
-          sprite = PixelSprites.treeSmall;
-          colors = PixelColors.treeSmall;
-      }
+      const shade = tree.shade ?? 1;
+      const r = tree.radius;
+      
+      // 基于位置的随机种子
+      const seed = Math.abs(tree.x * 7919 + tree.y * 7907) | 0;
+      const rand = (n: number) => {
+        const t = seed + n;
+        return ((Math.sin(t) * 43758.5453123) % 1 + 1) % 1;
+      };
 
-      // 按每棵树的shade调整颜色深浅
-      const shaded = this.shadeColors(colors, tree.shade ?? 1);
-      this.pixelRenderer.drawSprite(tree.x, tree.y, sprite, shaded);
+      // 决定异星植物类型 (0: 扭曲荆棘, 1: 发光孢子, 2: 晶体矿石)
+      // 40% 荆棘, 40% 孢子, 20% 矿石
+      const typeRand = rand(0);
+      const alienType = typeRand < 0.40 ? 0 : (typeRand < 0.80 ? 1 : 2);
+      
+      const adjustColor = (hex: string) => this.adjustTreeColor(hex, shade);
+
+      // 阴影通用绘制（像素化椭圆）
+      this.ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+      const shadowW = align(r * 2.2);
+      const shadowH = align(r * 1.2);
+      this.ctx.fillRect(align(tree.x - shadowW/2 + 4), align(tree.y - shadowH/2 + 6), shadowW, shadowH);
+
+      if (alienType === 0) {
+        // ==================== 扭曲荆棘 (Twisted Thorns) ====================
+        const colors = {
+          outline: "#2d0a31",
+          base: "#4a1252",
+          mid: "#7b1fa2",
+          light: "#ab47bc",
+          highlight: "#e1bee7",
+        };
+
+        // 使用像素块构建扭曲触手
+        const tentacleCount = 4 + Math.floor(rand(1) * 3);
+        for (let i = 0; i < tentacleCount; i++) {
+           const baseAngle = (i / tentacleCount) * Math.PI * 2;
+           let cx = tree.x;
+           let cy = tree.y;
+           const length = r * (1.2 + rand(i+10) * 0.5);
+           const segs = 8;
+           
+           for (let j = 0; j < segs; j++) {
+              const progress = j / segs;
+              const width = Math.max(pixelSize, (1 - progress) * r * 0.5);
+              const angle = baseAngle + Math.sin(progress * 3 + rand(i)) * 1.0;
+              
+              cx += Math.cos(angle) * (length / segs);
+              cy += Math.sin(angle) * (length / segs);
+              
+              // 绘制一段像素块
+              const x = align(cx);
+              const y = align(cy);
+              const w = align(width);
+              
+              this.ctx.fillStyle = adjustColor(colors.outline);
+              this.ctx.fillRect(x - pixelSize, y - pixelSize, w + pixelSize*2, w + pixelSize*2); // 描边
+              
+              this.ctx.fillStyle = adjustColor(j % 2 === 0 ? colors.base : colors.mid);
+              this.ctx.fillRect(x, y, w, w);
+              
+              // 尖刺装饰
+              if (rand(i*10+j) > 0.7) {
+                 const spikeLen = pixelSize * 2;
+                 const sx = x + (rand(j) > 0.5 ? w : -spikeLen);
+                 const sy = y + (rand(j+1) > 0.5 ? w : -spikeLen);
+                 this.ctx.fillStyle = adjustColor(colors.light);
+                 this.ctx.fillRect(sx, sy, spikeLen, spikeLen);
+              }
+           }
+        }
+
+      } else if (alienType === 1) {
+        // ==================== 发光孢子 (Glowing Spores) ====================
+        const colors = {
+          outline: "#002f35",
+          base: "#004d40",
+          mid: "#00897b",
+          light: "#4db6ac",
+          highlight: "#b2dfdb",
+        };
+
+        // 绘制像素化菌盖
+        const drawPixelCircle = (cx: number, cy: number, radius: number, color: string) => {
+           const gridR = Math.ceil(radius / pixelSize);
+           this.ctx.fillStyle = adjustColor(color);
+           for(let dx = -gridR; dx <= gridR; dx++) {
+              for(let dy = -gridR; dy <= gridR; dy++) {
+                 if (dx*dx + dy*dy <= gridR*gridR) {
+                    this.ctx.fillRect(align(cx + dx * pixelSize), align(cy + dy * pixelSize), pixelSize, pixelSize);
+                 }
+              }
+           }
+        };
+
+        // 主菌盖
+        drawPixelCircle(tree.x, tree.y, r, colors.outline);
+        drawPixelCircle(tree.x, tree.y - pixelSize, r - pixelSize, colors.base);
+        
+        // 随机小菌盖
+        const smallCount = 3 + Math.floor(rand(2) * 3);
+        for (let i = 0; i < smallCount; i++) {
+            const angle = rand(i*20) * Math.PI * 2;
+            const dist = r * 0.6;
+            const sr = r * 0.4 * (0.8 + rand(i));
+            const sx = tree.x + Math.cos(angle) * dist;
+            const sy = tree.y + Math.sin(angle) * dist;
+            
+            drawPixelCircle(sx, sy, sr, colors.outline);
+            drawPixelCircle(sx, sy - pixelSize, sr - pixelSize, colors.mid);
+            
+            // 发光点
+            if (rand(i*30) > 0.3) {
+               this.ctx.fillStyle = adjustColor(colors.highlight);
+               this.ctx.fillRect(align(sx), align(sy - pixelSize), pixelSize, pixelSize);
+            }
+        }
+        
+        // 主发光点
+        this.ctx.fillStyle = adjustColor(colors.highlight);
+        this.ctx.fillRect(align(tree.x - pixelSize), align(tree.y - r * 0.5), pixelSize * 3, pixelSize * 2);
+
+      } else if (alienType === 2) {
+        // ==================== 橙色水晶矿石 (Orange Crystal Clusters) - 顶视图像素风格 ====================
+        const colors = {
+          outline: "#3e2215",    // 深棕色描边
+          darkBase: "#8b4513",   // 深橙棕（阴影面）
+          base: "#d2691e",       // 基础橙色
+          mid: "#ff8c00",        // 中间橙色
+          light: "#ffa500",      // 亮橙色
+          highlight: "#ffd700",  // 高光金黄色
+          glow: "#ffcc66",       // 发光色
+        };
+
+        // 绘制像素化六边形晶体尖端（从顶部看是六边形）
+        const drawCrystalTop = (cx: number, cy: number, size: number, rotOffset: number) => {
+          const s = Math.max(pixelSize * 2, size);
+          const halfS = s / 2;
+          
+          // 六边形顶视图：6个切面围绕中心
+          for (let face = 0; face < 6; face++) {
+            const angle1 = rotOffset + (face / 6) * Math.PI * 2;
+            const angle2 = rotOffset + ((face + 1) / 6) * Math.PI * 2;
+            
+            // 外边缘点
+            const x1 = cx + Math.cos(angle1) * halfS;
+            const y1 = cy + Math.sin(angle1) * halfS;
+            const x2 = cx + Math.cos(angle2) * halfS;
+            const y2 = cy + Math.sin(angle2) * halfS;
+            
+            // 根据切面朝向选择颜色（模拟光照）
+            let faceColor: string;
+            if (face === 0 || face === 5) {
+              faceColor = colors.light;      // 顶部切面（亮）
+            } else if (face === 1 || face === 2) {
+              faceColor = colors.mid;        // 右侧切面
+            } else {
+              faceColor = colors.darkBase;   // 左侧切面（暗）
+            }
+            
+            // 绘制三角形切面
+            this.ctx.fillStyle = adjustColor(faceColor);
+            this.ctx.beginPath();
+            this.ctx.moveTo(align(cx), align(cy));
+            this.ctx.lineTo(align(x1), align(y1));
+            this.ctx.lineTo(align(x2), align(y2));
+            this.ctx.closePath();
+            this.ctx.fill();
+          }
+          
+          // 描边轮廓
+          this.ctx.strokeStyle = adjustColor(colors.outline);
+          this.ctx.lineWidth = pixelSize;
+          this.ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const angle = rotOffset + (i / 6) * Math.PI * 2;
+            const px = cx + Math.cos(angle) * halfS;
+            const py = cy + Math.sin(angle) * halfS;
+            if (i === 0) this.ctx.moveTo(align(px), align(py));
+            else this.ctx.lineTo(align(px), align(py));
+          }
+          this.ctx.closePath();
+          this.ctx.stroke();
+          
+          // 中心高光点（像素块）
+          this.ctx.fillStyle = adjustColor(colors.highlight);
+          this.ctx.fillRect(align(cx - pixelSize), align(cy - pixelSize), pixelSize * 2, pixelSize * 2);
+          
+          // 添加小像素高光
+          this.ctx.fillStyle = adjustColor(colors.glow);
+          this.ctx.fillRect(align(cx - pixelSize * 2), align(cy - pixelSize * 0.5), pixelSize, pixelSize);
+        };
+
+        // 主水晶簇：中心一个大晶体 + 周围4-6个小晶体
+        const mainSize = r * 0.7;
+        const crystalCount = 4 + Math.floor(rand(2) * 3); // 4-6个
+        
+        // 先绘制周围的小晶体（底层）
+        for (let i = 0; i < crystalCount; i++) {
+          const angle = (i / crystalCount) * Math.PI * 2 + rand(i) * 0.5;
+          const dist = r * (0.5 + rand(i + 5) * 0.3);
+          const cx = tree.x + Math.cos(angle) * dist;
+          const cy = tree.y + Math.sin(angle) * dist;
+          const size = mainSize * (0.4 + rand(i + 10) * 0.3);
+          const rot = rand(i + 20) * Math.PI;
+          
+          drawCrystalTop(cx, cy, size, rot);
+        }
+        
+        // 最后绘制中心大晶体（顶层）
+        drawCrystalTop(tree.x, tree.y, mainSize, rand(100) * Math.PI / 3);
+        
+        // 底部岩石基座（像素块）
+        const baseRadius = r * 0.3;
+        this.ctx.fillStyle = adjustColor("#2a1a10");
+        for (let i = 0; i < 5; i++) {
+          const angle = rand(i * 50) * Math.PI * 2;
+          const dist = rand(i * 60) * baseRadius;
+          const bx = tree.x + Math.cos(angle) * dist;
+          const by = tree.y + Math.sin(angle) * dist;
+          const bs = pixelSize * (2 + Math.floor(rand(i * 70) * 2));
+          this.ctx.fillRect(align(bx), align(by), bs, bs);
+        }
+      }
     }
 
     this.ctx.restore();
   }
 
-  // 将十六进制颜色按系数明暗调整
-  private adjustColorBrightness(hex: string, factor: number): string {
-    if (!hex || hex === "transparent") return hex;
-    const match = hex.match(/^#([0-9a-fA-F]{6})$/);
-    if (!match) return hex;
-    const num = parseInt(match[1], 16);
-    let r = (num >> 16) & 0xff;
-    let g = (num >> 8) & 0xff;
-    let b = num & 0xff;
-    r = Math.min(255, Math.max(0, Math.floor(r * factor)));
-    g = Math.min(255, Math.max(0, Math.floor(g * factor)));
-    b = Math.min(255, Math.max(0, Math.floor(b * factor)));
-    const out = (r << 16) | (g << 8) | b;
-    return `#${out.toString(16).padStart(6, "0")}`;
-  }
+  /**
+   * 调整树木颜色的深浅
+   */
+  private adjustTreeColor(baseColor: string, factor: number): string {
+    const r = parseInt(baseColor.slice(1, 3), 16);
+    const g = parseInt(baseColor.slice(3, 5), 16);
+    const b = parseInt(baseColor.slice(5, 7), 16);
 
-  // 为颜色映射应用明暗调整
-  private shadeColors(colors: Record<string, string>, factor: number): Record<string, string> {
-    const shaded: Record<string, string> = {};
-    for (const key in colors) {
-      shaded[key] = this.adjustColorBrightness(colors[key], factor);
-    }
-    return shaded;
+    const adjustedR = Math.min(255, Math.floor(r * factor));
+    const adjustedG = Math.min(255, Math.floor(g * factor));
+    const adjustedB = Math.min(255, Math.floor(b * factor));
+
+    return `#${adjustedR.toString(16).padStart(2, '0')}${adjustedG.toString(16).padStart(2, '0')}${adjustedB.toString(16).padStart(2, '0')}`;
   }
 
   /**
@@ -1339,12 +1717,13 @@ export class GameEngine {
    */
   private renderEnemies(): void {
     const enemies = this.enemyManager.getEnemies();
+    
     for (const enemy of enemies) {
       this.ctx.save();
 
       // 根据敌人类型选择精灵和颜色
-      let sprite: string[];
-      let colors: Record<string, string>;
+      let sprite: string[] = [];
+      let colors: Record<string, string> = {};
 
       switch (enemy.type) {
         case "swarm":
@@ -1382,10 +1761,62 @@ export class GameEngine {
         default:
           sprite = PixelSprites.enemySwarm;
           colors = PixelColors.enemySwarm;
-          }
+      }
 
       // 绘制像素精灵
       this.pixelRenderer.drawSprite(enemy.x, enemy.y, sprite, colors);
+
+      // 冰冻特效：蓝色染色 + 飘落雪花
+      if (enemy.frozenUntil && Date.now() < enemy.frozenUntil) {
+        const now = Date.now();
+        const r = enemy.radius;
+        
+        // 蓝色染色覆盖（让怪物看起来被冻住）
+        this.ctx.fillStyle = "rgba(100, 180, 255, 0.35)";
+        this.ctx.beginPath();
+        this.ctx.arc(enemy.x, enemy.y, r, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        // 飘落的小雪花粒子（轻盈感）
+        for (let i = 0; i < 3; i++) {
+          const phase = ((now * 0.0015 + i * 120) % 1);
+          const px = enemy.x + Math.sin(now * 0.002 + i * 2) * r * 0.5;
+          const py = enemy.y - r * 0.6 + phase * r * 1.2;
+          
+          // 雪花大小随下落渐小
+          const size = 2.5 * (1 - phase * 0.5);
+          const alpha = 0.8 * (1 - phase * 0.3);
+          
+          this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+          this.ctx.fillRect(px - size / 2, py - size / 2, size, size);
+        }
+      }
+
+      // 燃烧特效：简单的跳动小火苗粒子
+      if (enemy.burningUntil && Date.now() < enemy.burningUntil) {
+        const now = Date.now();
+        const r = enemy.radius;
+        
+        // 小火苗粒子（向上飘动）
+        for (let i = 0; i < 5; i++) {
+          const seed = i * 137.5; // 黄金角分布
+          const lifePhase = ((now * 0.003 + seed) % 1);
+          
+          // 粒子位置：从敌人边缘向上飘
+          const startX = enemy.x + Math.sin(seed) * r * 0.6;
+          const px = startX + Math.sin(now * 0.005 + i) * 3; // 左右摇摆
+          const py = enemy.y - lifePhase * r * 1.2; // 向上飘动
+          
+          // 粒子大小随生命周期变化
+          const size = 2 + (1 - lifePhase) * 2;
+          
+          // 颜色：黄色→橙色（随生命周期）
+          const alpha = 0.8 * (1 - lifePhase * 0.5);
+          const green = Math.floor(180 - lifePhase * 100);
+          this.ctx.fillStyle = `rgba(255, ${green}, 30, ${alpha})`;
+          this.ctx.fillRect(px - size / 2, py - size / 2, size, size);
+        }
+      }
 
       // 像素风格血条
       const barWidth = enemy.radius * 2.5;
@@ -1416,99 +1847,103 @@ export class GameEngine {
 
     this.ctx.save();
 
-    // 获取Boss配置
-    const bossInfo = this.bossSystem.getBossInfo(this.currentBoss.type);
+    const boss = this.currentBoss;
+    const bossInfo = BOSS_TYPES[boss.type];
     const bossColor = bossInfo?.color || "#ef4444";
+    const r = boss.radius;
+    const pixelSize = 4;
+    const align = (v: number) => Math.floor(v / pixelSize) * pixelSize;
 
-    // Boss跳跃特效
-    if (this.currentBoss.isJumping) {
-      // 跳跃时的光环效果
-      this.ctx.globalAlpha = 0.3 + Math.sin(Date.now() * 0.01) * 0.2;
-      this.pixelRenderer.drawPixelCircle(
-        this.currentBoss.x,
-        this.currentBoss.y,
-        this.currentBoss.radius + 20,
-        "transparent",
-        bossColor
-      );
-      this.ctx.globalAlpha = 1;
-      
-      // 跳跃时的残影效果
-      this.ctx.globalAlpha = 0.5;
-      this.pixelRenderer.drawPixelCircle(
-        this.currentBoss.x,
-        this.currentBoss.y,
-        this.currentBoss.radius,
-        "transparent",
-        bossColor
-      );
-      this.ctx.globalAlpha = 1;
+    // 跳跃时的缩放效果
+    const jumpScale = boss.isJumping ? 0.7 : 1;
+    const drawR = r * jumpScale;
+
+    // 1. 阴影
+    this.ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+    this.ctx.beginPath();
+    this.ctx.ellipse(align(boss.x + 4), align(boss.y + drawR * 0.8), drawR * 0.9, drawR * 0.4, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // 2. Boss主体 - 像素化八边形
+    const darkColor = this.adjustBossColor(bossColor, 0.6);
+    const lightColor = this.adjustBossColor(bossColor, 1.3);
+
+    // 主体填充
+    this.ctx.fillStyle = bossColor;
+    this.ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2 - Math.PI / 8;
+      const px = boss.x + Math.cos(angle) * drawR;
+      const py = boss.y + Math.sin(angle) * drawR;
+      if (i === 0) this.ctx.moveTo(align(px), align(py));
+      else this.ctx.lineTo(align(px), align(py));
+    }
+    this.ctx.closePath();
+    this.ctx.fill();
+
+    // 描边
+    this.ctx.strokeStyle = darkColor;
+    this.ctx.lineWidth = pixelSize;
+    this.ctx.stroke();
+
+    // 3. 内部纹理 - 像素块
+    this.ctx.fillStyle = darkColor;
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2;
+      const dist = drawR * 0.5;
+      const px = boss.x + Math.cos(angle) * dist;
+      const py = boss.y + Math.sin(angle) * dist;
+      this.ctx.fillRect(align(px), align(py), pixelSize * 2, pixelSize * 2);
     }
 
-    // ���制Boss（使用更大的像素精灵）
-    const bossSprite = [
-      "   ███   ",
-      "  █████  ",
-      " ███████ ",
-      "█████████",
-      "█ █████ █",
-      "█ █████ █",
-      "  █████  ",
-      " █ █ █ █ ",
-    ];
+    // 4. 眼睛 - 两个发光的像素块
+    const eyeOffset = drawR * 0.3;
+    const eyeY = boss.y - drawR * 0.2;
+    // 左眼
+    this.ctx.fillStyle = "#ffffff";
+    this.ctx.fillRect(align(boss.x - eyeOffset - pixelSize), align(eyeY), pixelSize * 3, pixelSize * 3);
+    this.ctx.fillStyle = "#ff0000";
+    this.ctx.fillRect(align(boss.x - eyeOffset), align(eyeY + pixelSize), pixelSize, pixelSize);
+    // 右眼
+    this.ctx.fillStyle = "#ffffff";
+    this.ctx.fillRect(align(boss.x + eyeOffset - pixelSize), align(eyeY), pixelSize * 3, pixelSize * 3);
+    this.ctx.fillStyle = "#ff0000";
+    this.ctx.fillRect(align(boss.x + eyeOffset), align(eyeY + pixelSize), pixelSize, pixelSize);
 
-    const bossColors = {
-      "█": bossColor,
-      " ": "transparent",
-    };
+    // 5. 高光
+    this.ctx.fillStyle = lightColor;
+    this.ctx.fillRect(align(boss.x - drawR * 0.4), align(boss.y - drawR * 0.6), pixelSize * 2, pixelSize);
+    this.ctx.fillRect(align(boss.x - drawR * 0.5), align(boss.y - drawR * 0.4), pixelSize, pixelSize * 2);
 
-    // 跳跃时Boss闪烁效果
-    if (this.currentBoss.isJumping) {
-      const flash = Math.sin(Date.now() * 0.02) > 0;
-      if (flash) {
-        this.ctx.globalAlpha = 0.7;
-      }
-    }
-
-    this.pixelRenderer.drawSprite(
-      this.currentBoss.x,
-      this.currentBoss.y,
-      bossSprite,
-      bossColors
-    );
-
-    this.ctx.globalAlpha = 1;
-
-    // Boss血条（更大更明显）
-    const barWidth = this.currentBoss.radius * 4;
-    const barHeight = 6;
-    const barY = this.currentBoss.y - this.currentBoss.radius - 15;
+    // 6. Boss血条
+    const barWidth = r * 3;
+    const barHeight = 8;
+    const barY = boss.y - r - 20;
     if (GAME_CONFIG.RENDERING.SHOW_HEALTH_BARS) {
       this.pixelRenderer.drawPixelHealthBar(
-        this.currentBoss.x,
-          barY,
+        boss.x,
+        barY,
         barWidth,
         barHeight,
-        this.currentBoss.health,
-        this.currentBoss.maxHealth,
+        boss.health,
+        boss.maxHealth,
         "#1a1a1a",
         bossColor
       );
     }
 
-    // Boss名称标签
     this.ctx.restore();
-    this.ctx.save();
-    const screenPos = this.camera.worldToScreen(this.currentBoss.x, barY - 20);
-    this.ctx.fillStyle = bossColor;
-    this.ctx.font = "bold 14px monospace";
-    this.ctx.textAlign = "center";
-    const bossName = this.currentBoss.isJumping ? `${bossInfo?.name || "BOSS"} (跳跃中!)` : (bossInfo?.name || "BOSS");
-    this.ctx.fillText(bossName, screenPos.x, screenPos.y);
-
-      this.ctx.restore();
   }
 
+  /**
+   * 调整Boss颜色明暗
+   */
+  private adjustBossColor(hex: string, factor: number): string {
+    const r = Math.min(255, Math.floor(parseInt(hex.slice(1, 3), 16) * factor));
+    const g = Math.min(255, Math.floor(parseInt(hex.slice(3, 5), 16) * factor));
+    const b = Math.min(255, Math.floor(parseInt(hex.slice(5, 7), 16) * factor));
+    return `rgb(${r},${g},${b})`;
+  }
   /**
    * 渲染子弹 - 像素风格
    */
@@ -1517,7 +1952,7 @@ export class GameEngine {
     this.ctx.imageSmoothingEnabled = false;
 
     // 渲染玩家子弹 - 像素风格圆形
-    for (const bullet of this.bullets) {
+    for (const bullet of this.bulletPool.getActive()) {
       this.pixelRenderer.drawPixelCircle(
         bullet.x,
         bullet.y,
@@ -1528,7 +1963,7 @@ export class GameEngine {
     }
 
     // 渲染敌人子弹 - 像素风格圆形
-    for (const bullet of this.enemyBullets) {
+    for (const bullet of this.enemyBulletPool.getActive()) {
       this.pixelRenderer.drawPixelCircle(
         bullet.x,
         bullet.y,
@@ -1589,85 +2024,10 @@ export class GameEngine {
   }
 
   /**
-   * 渲染 HUD
+   * 渲染 HUD (已移至 React PixelUI 组件)
    */
   private renderHUD(): void {
-    this.ctx.save();
-    this.ctx.fillStyle = "#fff";
-    this.ctx.font = "16px Arial";
-    this.ctx.textAlign = "left";
-    this.ctx.fillText(
-      `HP: ${Math.max(0, Math.floor(this.player.health))}/${this.player.maxHealth}`,
-      10,
-      25
-    );
-
-    if (this.player.shield > 0) {
-      this.ctx.fillStyle = "#60a5fa";
-      this.ctx.fillText(
-        `Shield: ${Math.floor(this.player.shield)}/${this.player.maxShield}`,
-        10,
-        45
-      );
-    }
-
-    // 命数❤显示（左上角）
-    const heartsY = this.player.shield > 0 ? 65 : 45;
-    for (let i = 0; i < (this.player.maxLives ?? 3); i++) {
-      this.ctx.fillStyle = i < (this.player.lives ?? 1) ? "#ef4444" : "#64748b";
-      this.ctx.fillText("❤", 10 + i * 20, heartsY);
-    }
-
-    // 显示保护期状态
-    const timeSinceStart = Date.now() - this.gameStartTime;
-    const protectionTimeLeft = 2000 - timeSinceStart;
-    if (protectionTimeLeft > 0) {
-      this.ctx.fillStyle = "#10b981";
-      this.ctx.font = "bold 14px Arial";
-      this.ctx.fillText(
-        `🛡️ 保护中: ${Math.ceil(protectionTimeLeft / 1000)}s`,
-        10,
-        this.player.shield > 0 ? 65 : 45
-      );
-    }
-
-    this.ctx.fillStyle = "#fff";
-    this.ctx.font = "16px Arial";
-    this.ctx.textAlign = "center";
-    this.ctx.fillText(
-      `Time: ${Math.floor(this.stats.survivalTime / 60)}:${(this.stats.survivalTime % 60).toString().padStart(2, "0")}`,
-      this.width / 2,
-      25
-    );
-
-    this.ctx.textAlign = "right";
-    this.ctx.fillText(`Kills: ${this.stats.killCount}`, this.width - 10, 25);
-    this.ctx.fillText(`Level: ${this.player.level}`, this.width - 10, 45);
-    
-    // 显示世界坐标（无尽地图模式）
-    this.ctx.fillStyle = "#60a5fa";
-    this.ctx.font = "12px monospace";
-    this.ctx.fillText(
-      `Pos: (${Math.floor(this.player.x)}, ${Math.floor(this.player.y)})`,
-      this.width - 10,
-      65
-    );
-
-    // 经验条
-    const expBarWidth = this.width * 0.8;
-    const expBarHeight = 8;
-    const expBarX = (this.width - expBarWidth) / 2;
-    const expBarY = this.height - 20;
-    const expNeeded = this.calculateExpNeeded(this.player.level);
-    const expProgress = this.player.exp / expNeeded;
-
-    this.ctx.fillStyle = "#333";
-    this.ctx.fillRect(expBarX, expBarY, expBarWidth, expBarHeight);
-
-    this.ctx.fillStyle = "#fbbf24";
-    this.ctx.fillRect(expBarX, expBarY, expBarWidth * expProgress, expBarHeight);
-
-    this.ctx.restore();
+    // HUD 渲染已移交至 React 层 (PixelUI)
   }
 
   /**
@@ -1675,16 +2035,16 @@ export class GameEngine {
    */
   public destroy(): void {
     console.log('[GameEngine] Destroying game engine...');
-    
+
     // 停止游戏循环
     this.stop();
-    
+
     // 移除事件监听器
     if (this.keyboardHandler) {
       window.removeEventListener("keydown", this.keyboardHandler);
       this.keyboardHandler = null;
     }
-    
+
     // 清理子系统
     try {
       this.enemyManager?.reset();
@@ -1695,18 +2055,18 @@ export class GameEngine {
     } catch (error) {
       console.error('[GameEngine] Error during subsystem cleanup', error);
     }
-    
-    // 清空数组
-    this.bullets = [];
-    this.enemyBullets = [];
+
+    // 清空对象池
+    this.bulletPool.clear();
+    this.enemyBulletPool.clear();
     this.keys.clear();
-    
+
     // 清空回调
     this.onLevelUp = undefined;
     this.onGameOver = undefined;
     this.onStatsUpdate = undefined;
     this.onError = undefined;
-    
+
     console.log('[GameEngine] Game engine destroyed successfully');
   }
 }

@@ -148,41 +148,42 @@ export const BACKGROUND_MELODY = [
 
 /**
  * Boss战斗背景音乐旋律序列
- * 紧张、急促、有压迫感的旋律
+ * 更紧张、急促、有强烈压迫感的旋律
  */
 export const BOSS_MELODY = [
-  // 紧张的主旋律 - 小调音阶营造压迫感
-  { note: 261.63, duration: 0.2 },  // C4
-  { note: 261.63, duration: 0.2 },
-  { note: 293.66, duration: 0.2 },  // D4
-  { note: 293.66, duration: 0.2 },
-  { note: 311.13, duration: 0.2 },  // 升D4
-  { note: 311.13, duration: 0.2 },
-  { note: 329.63, duration: 0.3 },  // E4
-  { note: 329.63, duration: 0.3 },
+  // 快速急促的警报感节奏 - 使用低音增加压迫感
+  { note: 130.81, duration: 0.1 },  // C3 低音
+  { note: 155.56, duration: 0.1 },  // 降E3
+  { note: 130.81, duration: 0.1 },  // C3
+  { note: 155.56, duration: 0.1 },  // 降E3
+  { note: 130.81, duration: 0.1 },  // C3
+  { note: 196.00, duration: 0.15 }, // G3
+  { note: 185.00, duration: 0.15 }, // 降G3
   
-  // 上升的旋律增加紧张感
-  { note: 349.23, duration: 0.2 },  // F4
-  { note: 392.00, duration: 0.2 },  // G4
-  { note: 415.30, duration: 0.2 },  // 降A4
-  { note: 440.00, duration: 0.4 },  // A4
+  // 紧张上升
+  { note: 174.61, duration: 0.1 },  // F3
+  { note: 196.00, duration: 0.1 },  // G3
+  { note: 207.65, duration: 0.1 },  // 降A3
+  { note: 220.00, duration: 0.1 },  // A3
+  { note: 233.08, duration: 0.1 },  // 降B3
+  { note: 261.63, duration: 0.2 },  // C4 高潮
   
-  // 下行旋律缓解然后再次紧张
-  { note: 392.00, duration: 0.2 },  // G4
-  { note: 349.23, duration: 0.2 },  // F4
-  { note: 329.63, duration: 0.2 },  // E4
-  { note: 293.66, duration: 0.2 },  // D4
-  { note: 261.63, duration: 0.4 },  // C4
+  // 快速下行制造紧迫感
+  { note: 233.08, duration: 0.08 }, // 降B3
+  { note: 207.65, duration: 0.08 }, // 降A3
+  { note: 196.00, duration: 0.08 }, // G3
+  { note: 174.61, duration: 0.08 }, // F3
+  { note: 155.56, duration: 0.1 },  // 降E3
+  { note: 130.81, duration: 0.15 }, // C3
   
-  // 重复主旋律
-  { note: 261.63, duration: 0.2 },
-  { note: 261.63, duration: 0.2 },
-  { note: 293.66, duration: 0.2 },
-  { note: 293.66, duration: 0.2 },
-  { note: 311.13, duration: 0.2 },
-  { note: 311.13, duration: 0.2 },
-  { note: 329.63, duration: 0.3 },
-  { note: 329.63, duration: 0.3 },
+  // 重复警报节奏
+  { note: 130.81, duration: 0.1 },  // C3
+  { note: 155.56, duration: 0.1 },  // 降E3
+  { note: 130.81, duration: 0.1 },  // C3
+  { note: 155.56, duration: 0.1 },  // 降E3
+  { note: 174.61, duration: 0.1 },  // F3
+  { note: 155.56, duration: 0.1 },  // 降E3
+  { note: 130.81, duration: 0.2 },  // C3 结束
 ];
 
 /**

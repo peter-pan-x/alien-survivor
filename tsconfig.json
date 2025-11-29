@@ -30,8 +30,7 @@
   },
   "include": [
     "client/src",
-    "client/index.html",
-    "vite.config.ts"
+    "client/index.html"
   ],
   "exclude": [
     "node_modules",

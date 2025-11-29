@@ -9,16 +9,12 @@ export class SpatialGrid {
   private cellSize: number;
   private width: number;
   private height: number;
-  private cols: number;
-  private rows: number;
   private grid: Map<string, Enemy[]>;
 
   constructor(width: number, height: number, cellSize: number = 100) {
     this.width = width;
     this.height = height;
     this.cellSize = cellSize;
-    this.cols = Math.ceil(width / cellSize);
-    this.rows = Math.ceil(height / cellSize);
     this.grid = new Map();
   }
 
@@ -52,7 +48,7 @@ export class SpatialGrid {
   /**
    * 获取指定位置附近的所有敌人
    */
-  getNearby(x: number, y: number, radius: number = 0): Enemy[] {
+  getNearby(x: number, y: number, _radius: number = 0): Enemy[] {
     const nearby: Enemy[] = [];
     const col = Math.floor(x / this.cellSize);
     const row = Math.floor(y / this.cellSize);
@@ -73,6 +69,7 @@ export class SpatialGrid {
 
   /**
    * 检测子弹与敌人的碰撞
+   * 优化：使用平方距离判定，避免开方运算
    */
   checkBulletCollisions(
     bullet: Bullet,
@@ -83,9 +80,10 @@ export class SpatialGrid {
     for (const enemy of nearby) {
       const dx = bullet.x - enemy.x;
       const dy = bullet.y - enemy.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+      const distanceSq = dx * dx + dy * dy;
+      const radiusSum = bullet.radius + enemy.radius;
 
-      if (distance < bullet.radius + enemy.radius) {
+      if (distanceSq < radiusSum * radiusSum) {
         onCollision(enemy);
       }
     }
@@ -93,6 +91,7 @@ export class SpatialGrid {
 
   /**
    * 检测玩家与敌人的碰撞
+   * 优化：使用平方距离判定，避免开方运算
    */
   checkPlayerCollisions(
     playerX: number,
@@ -105,10 +104,11 @@ export class SpatialGrid {
     for (const enemy of nearby) {
       const dx = playerX - enemy.x;
       const dy = playerY - enemy.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+      const distanceSq = dx * dx + dy * dy;
 
       const enemyEffectiveRadius = enemy.radius * (GAME_CONFIG.COLLISION?.ENEMY_VS_PLAYER_ENEMY_RADIUS_MULTIPLIER ?? 0.85);
-      if (distance < playerRadius + enemyEffectiveRadius) {
+      const radiusSum = playerRadius + enemyEffectiveRadius;
+      if (distanceSq < radiusSum * radiusSum) {
         onCollision(enemy);
       }
     }

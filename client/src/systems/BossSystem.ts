@@ -166,13 +166,14 @@ export class BossSystem {
       return;
     }
     
-    // 计算与玩家的距离
+    // 计算与玩家的距离（优化：使用平方距离判定）
     const dx = player.x - boss.x;
     const dy = player.y - boss.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    const distanceSq = dx * dx + dy * dy;
+    const jumpRangeSq = boss.jumpRange * boss.jumpRange;
     
     // 如果距离超过跳跃触发距离，执行跳跃
-    if (distance > boss.jumpRange) {
+    if (distanceSq > jumpRangeSq) {
       this.executeJump(boss, player, currentTime, canvasWidth, canvasHeight);
     }
   }

@@ -6,6 +6,7 @@ import { VirtualJoystick } from "../utils/VirtualJoystick";
 import { GameEngine } from "../core/GameEngine";
 import { PixelUI } from "../components/PixelUI";
 import type { SkillEffect } from "../systems/SkillSystem";
+import { DeviceUtils } from "../utils/DeviceUtils";
 import "../styles/pixel.css";
 
 /**
@@ -40,15 +41,31 @@ export default function Game() {
     setStats((prev) => ({ ...prev, highScore: savedData.highScore }));
   }, []);
 
-  // 初始化虚拟摇杆
+  // 初始化虚拟摇杆和设备优化
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     virtualJoystickRef.current = new VirtualJoystick(canvas);
 
+    // 防止移动端双击缩放
+    DeviceUtils.preventDoubleTapZoom(canvas);
+
+    // 检测设备信息
+    const deviceInfo = DeviceUtils.detectDevice();
+    console.log('[Game] Device info:', deviceInfo);
+    console.log('[Game] Performance level:', DeviceUtils.getPerformanceLevel());
+
+    // 移动端：尝试锁定横屏方向（游戏更适合横屏）
+    if (deviceInfo.isMobile && deviceInfo.orientation === 'landscape') {
+      DeviceUtils.lockOrientation('landscape').catch(() => {
+        console.log('[Game] Screen orientation lock not supported');
+      });
+    }
+
     return () => {
       virtualJoystickRef.current?.destroy();
+      DeviceUtils.unlockOrientation();
     };
   }, []);
 
@@ -159,11 +176,17 @@ export default function Game() {
   /**
    * 开始游戏
    */
-  const initGame = () => {
+  const initGame = async () => {
     const engine = gameEngineRef.current;
     if (!engine) {
       console.error('[Game] GameEngine not initialized!');
       return;
+    }
+
+    // 移动端：尝试进入全屏模式
+    const deviceInfo = DeviceUtils.detectDevice();
+    if (deviceInfo.isMobile && !DeviceUtils.isFullscreen()) {
+      await DeviceUtils.requestFullscreen(document.documentElement);
     }
 
     // 重置游戏引擎
@@ -271,7 +294,7 @@ export default function Game() {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-slate-900">
-      {/* Canvas - 全屏显示 */}
+      {/* Canvas - 完全充满窗口 */}
       <canvas
         ref={canvasRef}
         className={`w-full h-full ${
@@ -279,7 +302,11 @@ export default function Game() {
             ? "hidden"
             : ""
         }`}
-        style={{ touchAction: "none" }}
+        style={{
+          touchAction: "none",
+          display: "block",
+          imageRendering: "pixelated",
+        }}
       />
       
       {/* 像素风格UI */}

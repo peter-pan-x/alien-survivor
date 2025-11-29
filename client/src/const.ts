@@ -1,4 +1,6 @@
-export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+// 本地定义常量（原 @shared/const 不存在）
+export const COOKIE_NAME = "alien-survivor-session";
+export const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 export const APP_TITLE = import.meta.env.VITE_APP_TITLE || "App";
 

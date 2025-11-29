@@ -4,7 +4,6 @@
  */
 
 import { Boss, BossType, Player, Bullet } from "../gameTypes";
-import { BOSS_TYPES } from "./BossConfig";
 
 /**
  * Boss技能接口
@@ -33,7 +32,7 @@ export class BossSkillSystem {
     this.skills.set("level10", {
       name: "环形弹幕",
       description: "向8个方向发射子弹",
-      execute: (boss: Boss, player: Player, bullets: Bullet[], currentTime: number) => {
+      execute: (boss: Boss, _player: Player, _bullets: Bullet[], _currentTime: number) => {
         const newBullets: Bullet[] = [];
         const bulletCount = 8;
         const bulletSpeed = 4;
@@ -61,7 +60,7 @@ export class BossSkillSystem {
     this.skills.set("level20", {
       name: "追踪弹幕",
       description: "发射追踪玩家的子弹",
-      execute: (boss: Boss, player: Player, bullets: Bullet[], currentTime: number) => {
+      execute: (boss: Boss, player: Player, _bullets: Bullet[], _currentTime: number) => {
         const newBullets: Bullet[] = [];
         const bulletCount = 3;
         const bulletSpeed = 5;
@@ -94,7 +93,7 @@ export class BossSkillSystem {
     this.skills.set("level30", {
       name: "扇形弹幕",
       description: "向玩家方向发射扇形弹幕",
-      execute: (boss: Boss, player: Player, bullets: Bullet[], currentTime: number) => {
+      execute: (boss: Boss, player: Player, _bullets: Bullet[], _currentTime: number) => {
         const newBullets: Bullet[] = [];
         const bulletCount = 5;
         const bulletSpeed = 5;
@@ -128,7 +127,7 @@ export class BossSkillSystem {
     this.skills.set("level40", {
       name: "螺旋弹幕",
       description: "发射螺旋形弹幕",
-      execute: (boss: Boss, player: Player, bullets: Bullet[], currentTime: number) => {
+      execute: (boss: Boss, player: Player, _bullets: Bullet[], currentTime: number) => {
         const newBullets: Bullet[] = [];
         const bulletCount = 12;
         const bulletSpeed = 4.5;
@@ -160,7 +159,7 @@ export class BossSkillSystem {
     this.skills.set("level50", {
       name: "多重弹幕",
       description: "同时发射多种弹幕",
-      execute: (boss: Boss, player: Player, bullets: Bullet[], currentTime: number) => {
+      execute: (boss: Boss, player: Player, _bullets: Bullet[], _currentTime: number) => {
         const newBullets: Bullet[] = [];
         const bulletSpeed = 5;
         const bulletDamage = boss.maxHealth * 0.01;
@@ -228,7 +227,21 @@ export class BossSkillSystem {
     boss.lastSkillTime = currentTime;
 
     // 执行技能
-    return skill.execute(boss, player, bullets, currentTime);
+    const newBullets = skill.execute(boss, player, bullets, currentTime);
+
+    // 为所有 Boss 子弹统一添加距离限制
+    // Boss 子弹基础距离 700（翻倍），随玩家等级增加
+    const baseBossDistance = 700;
+    const distancePerLevel = 40;
+    const maxDistance = baseBossDistance + distancePerLevel * (player.level - 1);
+
+    for (const bullet of newBullets) {
+      bullet.startX = boss.x;
+      bullet.startY = boss.y;
+      bullet.maxDistance = maxDistance;
+    }
+
+    return newBullets;
   }
 
   /**

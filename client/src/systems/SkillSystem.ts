@@ -37,6 +37,7 @@ export interface SkillEffect {
 export class SkillSystem {
   private skills: Map<string, SkillEffect> = new Map();
   private weaponAddCallback?: (player: Player, weaponType: WeaponType) => void;
+  private magnetizeAllCallback?: () => void;
 
   constructor() {
     this.registerDefaultSkills();
@@ -47,6 +48,13 @@ export class SkillSystem {
    */
   setWeaponAddCallback(callback: (player: Player, weaponType: WeaponType) => void): void {
     this.weaponAddCallback = callback;
+  }
+
+  /**
+   * 设置磁吸所有经验球回调
+   */
+  setMagnetizeAllCallback(callback: () => void): void {
+    this.magnetizeAllCallback = callback;
   }
 
   /**
@@ -129,13 +137,13 @@ export class SkillSystem {
     this.registerSkill({
       id: "multi_shot",
       name: "多重射击",
-      description: "子弹数量 +1，伤害 -30%",
+      description: "子弹数量 +1，伤害 -20%",
       type: "attack",
       icon: "🔫",
       apply: (player: Player) => {
         player.bulletCount += 1;
-        // 每次选择多重射击，伤害降低30%
-        player.attackDamage = Math.floor(player.attackDamage * 0.7);
+        // 每次选择多重射击，伤害降低20%（优化：从30%降低到20%）
+        player.attackDamage = Math.floor(player.attackDamage * 0.8);
         return true;
       },
       canSelect: (player: Player) => player.bulletCount < 10, // 最多10个子弹
@@ -144,11 +152,13 @@ export class SkillSystem {
     this.registerSkill({
       id: "bullet_size",
       name: "子弹增幅",
-      description: "子弹体积 +50%",
+      description: "子弹体积 +50%，伤害 +30%",
       type: "attack",
       icon: "🔵",
       apply: (player: Player) => {
         player.bulletSizeMultiplier *= GAME_CONFIG.SKILLS.BULLET_SIZE_MULTIPLIER;
+        // 同时增加30%伤害
+        player.attackDamage = Math.floor(player.attackDamage * 1.3);
         return true;
       },
       canSelect: (player: Player) => player.bulletSizeMultiplier < 3, // 最多3倍
@@ -225,7 +235,7 @@ export class SkillSystem {
         }
         return true;
       },
-      canSelect: (player: Player) => player.hasPierce && player.pierceCount < 10, // 最多10个穿透
+      canSelect: (player: Player) => !player.hasPierce || player.pierceCount < 10, // 首次可选，之后可升级到10穿透
     });
 
     this.registerSkill({
@@ -260,6 +270,39 @@ export class SkillSystem {
       canSelect: (player: Player) => player.moveSpeed < GAME_CONFIG.PLAYER.MAX_MOVE_SPEED,
     });
 
+    // 拾取范围技能
+    this.registerSkill({
+      id: "pickup_range",
+      name: "磁力吸收",
+      description: "经验球拾取范围 +30",
+      type: "special",
+      icon: "🧲",
+      apply: (player: Player) => {
+        player.pickupRange += 30;
+        return true;
+      },
+      canSelect: (player: Player) => player.pickupRange < 300, // 最大拾取范围300
+    });
+
+    // 磁吸全屏技能（稀有）
+    this.registerSkill({
+      id: "magnet_burst",
+      name: "磁力爆发",
+      description: "经验球拾取范围 +80，且立即吸收所有场上经验球",
+      type: "special",
+      rarity: "rare",
+      icon: "⚡",
+      apply: (player: Player) => {
+        player.pickupRange += 80;
+        // 立即吸收所有经验球
+        if (this.magnetizeAllCallback) {
+          this.magnetizeAllCallback();
+        }
+        return true;
+      },
+      canSelect: (player: Player) => player.pickupRange < 300,
+    });
+
     // ==================== 武器类技能 ====================
     this.registerSkill({
       id: "orbital_drone",
@@ -281,7 +324,7 @@ export class SkillSystem {
     this.registerSkill({
       id: "lightning_chain",
       name: "闪电链",
-      description: "定期释放连锁闪电",
+      description: "释放连锁闪电，伤害1.5倍攻击力（升级+50%伤害，+2连击）",
       type: "special",
       rarity: "rare",
       icon: "⚡",
@@ -312,24 +355,92 @@ export class SkillSystem {
       canSelect: () => true,
     });
 
-    // AOE 爆裂（敌人死亡造成范围伤害，可升级范围）
+    // 分裂子弹（敌人死亡后向四周发射3颗子弹）
     this.registerSkill({
       id: "aoe_blast",
-      name: "爆裂",
-      description: `敌人死亡触发爆炸并造成范围伤害（可升级范围）`,
+      name: "分裂",
+      description: `敌人死亡后分裂出3颗子弹（升级提升伤害和射程）`,
       type: "special",
-      icon: "💣",
+      icon: "💥",
       apply: (player: Player) => {
         if (!player.hasAOEExplosion) {
+          // 首次获得：30%攻击力伤害，200距离
           player.hasAOEExplosion = true;
-          player.aoeRadius = GAME_CONFIG.SKILLS.AOE_RADIUS ?? 80;
+          player.aoeDamage = 0.3; // 30%攻击力
+          player.aoeRadius = 200; // 飞行距离（翻倍）
         } else {
-          // 每次升级增加30%爆炸范围，不增加伤害
-          player.aoeRadius = Math.floor(player.aoeRadius * 1.3);
+          // 每次升级：伤害+10%，距离+40
+          player.aoeDamage += 0.1;
+          player.aoeRadius += 40;
         }
         return true;
       },
-      canSelect: () => true, // 可重复选择以提升范围
+      canSelect: () => true, // 可重复选择以提升伤害和距离
+    });
+
+    // 遇强则强：攻击额外附带生命值10%的伤害
+    this.registerSkill({
+      id: "strength_bonus",
+      name: "遇强则强",
+      description: "攻击额外附带角色当前生命值10%的伤害（可叠加）",
+      type: "attack",
+      rarity: "rare",
+      icon: "💪",
+      apply: (player: Player) => {
+        if (!player.strengthBonus) {
+          player.strengthBonus = 0.1; // 初始10%
+        } else {
+          player.strengthBonus += 0.05; // 每次升级+5%
+        }
+        return true;
+      },
+      canSelect: () => true,
+    });
+
+    // 冰冻射击：子弹伤害+20%，击中敌人冰冻1秒
+    this.registerSkill({
+      id: "frost_shot",
+      name: "冰冻射击",
+      description: "子弹伤害+20%，击中敌人冰冻1秒（升级+10%伤害，+0.5秒冰冻）",
+      type: "attack",
+      rarity: "rare",
+      icon: "❄️",
+      apply: (player: Player) => {
+        if (!player.hasFrostShot) {
+          player.hasFrostShot = true;
+          player.frostDamageBonus = 0.2; // 初始20%伤害加成
+          player.frostDuration = 1000; // 初始1秒冰冻
+        } else {
+          player.frostDamageBonus = (player.frostDamageBonus || 0.2) + 0.1; // +10%伤害
+          player.frostDuration = (player.frostDuration || 1000) + 500; // +0.5秒冰冻
+        }
+        return true;
+      },
+      canSelect: () => true,
+    });
+
+    // 火焰攻击：子弹伤害+20%，施加燃烧效果
+    this.registerSkill({
+      id: "flame_attack",
+      name: "火焰攻击",
+      description: "伤害+20%，敌人燃烧3秒（每0.5秒造成10%攻击力伤害）",
+      type: "attack",
+      rarity: "rare",
+      icon: "🔥",
+      apply: (player: Player) => {
+        if (!player.hasFlameAttack) {
+          player.hasFlameAttack = true;
+          player.flameDamageBonus = 0.2; // 初始20%伤害加成
+          player.flameBurnDamage = 0.1; // 每次燃烧10%攻击力
+          player.flameBurnDuration = 3000; // 燃烧持续3秒
+        } else {
+          player.flameDamageBonus = (player.flameDamageBonus || 0.2) + 0.1; // +10%伤害
+          player.flameBurnDamage = (player.flameBurnDamage || 0.1) + 0.05; // +5%燃烧伤害
+          player.flameBurnDuration = (player.flameBurnDuration || 3000) + 1000; // +1秒燃烧
+        }
+        return true;
+      },
+      canSelect: () => true,
     });
   }
 
@@ -413,75 +524,64 @@ export class SkillSystem {
     return Array.from(this.skills.values());
   }
 
+  // 特殊技能ID及其固定出现概率（不参与均等分配）
+  private static readonly SPECIAL_SKILL_RATES: Record<string, number> = {
+    "life_steal": 0.0001, // 生命汲取：0.01%
+  };
+
   /**
    * 随机选择N个可用技能
+   * 设计原则：
+   * 1. 特殊技能（如生命汲取）有固定的低概率，不参与均等分配
+   * 2. 其余所有技能均等概率出现
+   * 3. 新增技能自动均等分配（无需额外配置）
+   * 
    * @param player 玩家对象
    * @param count 数量
    * @returns 随机技能数组
    */
   getRandomSkills(player: Player, count: number = 3): SkillEffect[] {
     const available = this.getAvailableSkills(player);
-
-    // 基于权重的随机选择（无放回）
-    const pool = [...available];
     const selected: SkillEffect[] = [];
-
-    // 生命汲取特殊：固定出现率3%，玩家选择一次后为0%
-    let lifeStealSkillIndex = pool.findIndex((s) => s.id === "life_steal");
-    let lifeStealSkill: SkillEffect | undefined =
-      lifeStealSkillIndex >= 0 ? pool[lifeStealSkillIndex] : undefined;
-
-    // 从池中移除，改为按固定概率决定是否本次出现
-    if (lifeStealSkillIndex >= 0) {
-      pool.splice(lifeStealSkillIndex, 1);
-    }
-
-    const canLifeStealAppear =
-      !!lifeStealSkill &&
-      !player.hasLifeSteal &&
-      lifeStealSkill.canSelect(player);
-
-    // 初始出现概率0.5%，若玩家已选择过则不再出现（0%）
-    if (canLifeStealAppear && Math.random() < 0.005) {
-      selected.push(lifeStealSkill!);
-      // 记录在选项中的“出现”次数（用于统计）
-      if (!player.skillAppearances) player.skillAppearances = {};
-      const prev = player.skillAppearances["life_steal"] ?? 0;
-      player.skillAppearances["life_steal"] = prev + 1;
-    }
-
-    const getWeight = (skill: SkillEffect): number => {
-      // 史诗技能：极低出现概率（低于5%）
-      if (skill.rarity === "epic") {
-        return 0.05; // 5%权重，对应约0.5-2%出现概率
+    
+    // 分离特殊技能和普通技能
+    const specialSkills: SkillEffect[] = [];
+    const normalPool: SkillEffect[] = [];
+    
+    for (const skill of available) {
+      if (SkillSystem.SPECIAL_SKILL_RATES[skill.id] !== undefined) {
+        specialSkills.push(skill);
+      } else {
+        normalPool.push(skill);
       }
-      // 稀有技能：低出现概率（低于10%）
-      if (skill.rarity === "rare") {
-        const baseRare = GAME_CONFIG.SKILLS.RARE_WEIGHT_MULTIPLIER ?? 0.67; // 默认降低33%
-        const timesSelected = player.rareSkillSelections?.[skill.id] ?? 0;
-        const decayPerPick = 0.89; // 每次选择后再降低11%
-        return baseRare * Math.pow(decayPerPick, timesSelected);
+    }
+    
+    // 处理特殊技能：按固定概率决定是否出现
+    for (const skill of specialSkills) {
+      const rate = SkillSystem.SPECIAL_SKILL_RATES[skill.id];
+      if (Math.random() < rate) {
+        selected.push(skill);
+        // 记录出现次数（统计用）
+        if (!player.skillAppearances) player.skillAppearances = {};
+        player.skillAppearances[skill.id] = (player.skillAppearances[skill.id] ?? 0) + 1;
       }
-      return 1; // 普通技能正常权重
-    };
-
-    const picks = Math.min(count - selected.length, pool.length);
+    }
+    
+    // 普通技能：均等概率随机选择（无放回）
+    const picks = Math.min(count - selected.length, normalPool.length);
     for (let i = 0; i < picks; i++) {
-      const totalWeight = pool.reduce((sum, s) => sum + getWeight(s), 0);
-      let r = Math.random() * totalWeight;
-      let chosenIndex = 0;
-      for (let j = 0; j < pool.length; j++) {
-        r -= getWeight(pool[j]);
-        if (r <= 0) {
-          chosenIndex = j;
-          break;
-        }
-      }
-      const chosen = pool[chosenIndex];
-      selected.push(chosen);
-      pool.splice(chosenIndex, 1);
+      // 均等概率：直接用数组长度随机索引
+      const randomIndex = Math.floor(Math.random() * normalPool.length);
+      selected.push(normalPool[randomIndex]);
+      normalPool.splice(randomIndex, 1);
     }
-
+    
+    // 打乱顺序，避免特殊技能总在前面
+    for (let i = selected.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [selected[i], selected[j]] = [selected[j], selected[i]];
+    }
+    
     return selected;
   }
 

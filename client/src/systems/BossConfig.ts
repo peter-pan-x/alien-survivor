@@ -15,7 +15,7 @@ export const BOSS_BASE_CONFIG = {
   HEALTH_MULTIPLIER: 100,
   DAMAGE_MULTIPLIER: 100,
   SPEED_MULTIPLIER: 0.5, // Boss移动速度较慢
-  RADIUS_MULTIPLIER: 4.5, // Boss体积进一步增大（从3倍增至4.5倍）
+  RADIUS_MULTIPLIER: 4.0, // Boss体积（从8倍降到4倍）
   SKILL_COOLDOWN: 3000, // 技能冷却时间（毫秒）
   // 跳跃机制配置
   JUMP_RANGE: 800, // Boss跳跃距离（基于屏幕最大尺寸）
@@ -99,9 +99,9 @@ export function createBoss(
   const speed = baseSpeed;
   const radius = baseRadius;
 
-  // 在玩家周围随机位置生成Boss
+  // 在玩家周围随机位置生成Boss（固定距离300-400，不基于画布像素）
   const angle = Math.random() * Math.PI * 2;
-  const distance = Math.min(canvasWidth, canvasHeight) * 0.4;
+  const distance = 300 + Math.random() * 100; // 固定距离300-400
   const x = playerX + Math.cos(angle) * distance;
   const y = playerY + Math.sin(angle) * distance;
 

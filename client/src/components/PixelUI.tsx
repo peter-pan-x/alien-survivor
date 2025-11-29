@@ -26,9 +26,9 @@ interface PixelUIProps {
 }
 
 /**
- * 像素风格图标组件
+ * 像素风格图标组件（预留用于未来扩展）
  */
-function PixelIcon({ type, size = 32 }: { type: string; size?: number }) {
+function _PixelIcon({ type, size = 32 }: { type: string; size?: number }) {
   const iconStyle: React.CSSProperties = {
     width: size,
     height: size,
@@ -98,11 +98,11 @@ function PixelProgressBar({
             height: '100%',
             borderRight: '2px solid #1a202c',
             imageRendering: 'pixelated' as any,
-            background: type === 'health' 
+            background: type === 'health'
               ? 'linear-gradient(to bottom, #f56565 0%, #e53e3e 50%, #c53030 50%, #9b2c2c 100%)'
               : type === 'shield'
-              ? 'linear-gradient(to bottom, #4299e1 0%, #3182ce 50%, #2c5282 50%, #2a4365 100%)'
-              : 'linear-gradient(to bottom, #fbbf24 0%, #f59e0b 50%, #d97706 50%, #b45309 100%)',
+                ? 'linear-gradient(to bottom, #4299e1 0%, #3182ce 50%, #2c5282 50%, #2a4365 100%)'
+                : 'linear-gradient(to bottom, #fbbf24 0%, #f59e0b 50%, #d97706 50%, #b45309 100%)',
           }}
         />
         <div
@@ -231,10 +231,10 @@ function PixelMainMenu({
       </div>
 
       {/* 作者署名 */}
-      <div 
-        className="pixel-text" 
-        style={{ 
-          fontSize: '12px', 
+      <div
+        className="pixel-text"
+        style={{
+          fontSize: '12px',
           color: '#718096',
           textAlign: 'center',
           marginTop: '16px',
@@ -350,19 +350,19 @@ function PixelLevelUp({
                     fontWeight: 'bold',
                     ...(skill.rarity === 'epic'
                       ? {
-                          background: '#553c9a',
-                          border: '2px solid #6b46c1',
-                          color: '#e9d5ff',
-                          boxShadow: '0 0 8px rgba(139, 92, 246, 0.6)',
-                        }
+                        background: '#553c9a',
+                        border: '2px solid #6b46c1',
+                        color: '#e9d5ff',
+                        boxShadow: '0 0 8px rgba(139, 92, 246, 0.6)',
+                      }
                       : skill.rarity === 'rare'
-                      ? {
+                        ? {
                           background: '#065f46',
                           border: '2px solid #047857',
                           color: '#a7f3d0',
                           boxShadow: '0 0 6px rgba(16, 185, 129, 0.4)',
                         }
-                      : {}),
+                        : {}),
                   }}
                 >
                   {skill.rarity === 'epic' ? '史诗' : skill.rarity === 'rare' ? '稀有' : ''}
@@ -477,73 +477,107 @@ function PixelHUD({
   const expNeeded = Math.ceil(baseExp * Math.pow(growth, Math.max(0, player.level - 1)));
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: '16px',
-        left: '16px',
-        right: '16px',
-        zIndex: 10,
-        pointerEvents: 'none',
-      }}
-    >
-      {/* 左侧：生命和护盾 */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '300px' }}>
-        <PixelProgressBar
-          value={player.health}
-          max={player.maxHealth}
-          type="health"
-          label="HP"
-        />
-        {player.maxShield > 0 && (
-          <PixelProgressBar
-            value={player.shield}
-            max={player.maxShield}
-            type="shield"
-            label="SHIELD"
-          />
-        )}
-        <PixelProgressBar
-          value={player.exp}
-          max={expNeeded}
-          type="exp"
-          label="EXP"
-        />
-      </div>
-
-      {/* 右侧：统计信息 */}
+    <>
+      {/* 顶部状态栏 */}
       <div
         style={{
           position: 'fixed',
           top: '16px',
+          left: '16px',
           right: '16px',
           display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          textAlign: 'right',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          pointerEvents: 'none',
+          zIndex: 10,
         }}
       >
-        <div className="pixel-card" style={{ padding: '8px 12px', display: 'inline-block' }}>
-          <div className="pixel-label">LEVEL</div>
-          <div className="pixel-number">{player.level}</div>
+        {/* 左侧：生命值与护盾 */}
+        <div style={{ width: '250px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="pixel-panel" style={{ padding: '8px', background: 'rgba(0,0,0,0.6)' }}>
+            <PixelProgressBar
+              value={player.health}
+              max={player.maxHealth}
+              type="health"
+              label="HP"
+            />
+            {player.maxShield > 0 && (
+              <PixelProgressBar
+                value={player.shield}
+                max={player.maxShield}
+                type="shield"
+                label="SHIELD"
+              />
+            )}
+          </div>
         </div>
-        <div className="pixel-card" style={{ padding: '8px 12px', display: 'inline-block' }}>
-          <div className="pixel-label">KILLS</div>
-          <div className="pixel-number">{stats.killCount}</div>
+
+        {/* 中间：时间与分数 */}
+        <div style={{ textAlign: 'center' }}>
+          <div className="pixel-panel" style={{ padding: '8px 24px', background: 'rgba(0,0,0,0.6)', display: 'inline-block' }}>
+            <div className="pixel-number" style={{ fontSize: '32px', color: '#fff', textShadow: '2px 2px 0 #000' }}>
+              {Math.floor(stats.survivalTime / 60)}:{(stats.survivalTime % 60).toString().padStart(2, '0')}
+            </div>
+            <div className="pixel-text" style={{ fontSize: '14px', color: '#fbbf24', marginTop: '4px' }}>
+              SCORE: {stats.score.toLocaleString()}
+            </div>
+          </div>
         </div>
-        <div className="pixel-card" style={{ padding: '8px 12px', display: 'inline-block' }}>
-          <div className="pixel-label">SCORE</div>
-          <div className="pixel-number">{stats.score.toLocaleString()}</div>
-        </div>
-        <div className="pixel-card" style={{ padding: '8px 12px', display: 'inline-block' }}>
-          <div className="pixel-label">TIME</div>
-          <div className="pixel-number">
-            {Math.floor(stats.survivalTime / 60)}:
-            {(stats.survivalTime % 60).toString().padStart(2, '0')}
+
+        {/* 右侧：击杀与等级 */}
+        <div style={{ width: '250px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
+          <div className="pixel-panel" style={{ padding: '8px', background: 'rgba(0,0,0,0.6)', minWidth: '120px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <span className="pixel-label">KILLS</span>
+              <span className="pixel-number">{stats.killCount}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="pixel-label">LEVEL</span>
+              <span className="pixel-number" style={{ color: '#63b3ed' }}>{player.level}</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* 底部：经验条 */}
+      <div
+        style={{
+          position: 'fixed',
+          bottom: '0',
+          left: '0',
+          right: '0',
+          height: '12px', // 变细
+          background: '#1a202c',
+          borderTop: '1px solid #4a5568', // 边框变细
+          zIndex: 10,
+          pointerEvents: 'none',
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.min(100, (player.exp / expNeeded) * 100)}%`,
+            height: '100%',
+            background: 'linear-gradient(to right, #fbbf24, #f59e0b)',
+            transition: 'width 0.2s',
+          }}
+        />
+        <div
+          className="pixel-text"
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            fontSize: '10px', // 字体变小
+            color: '#fff',
+            textShadow: '1px 1px 0 #000',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          EXP {player.exp} / {expNeeded}
+        </div>
+      </div>
+    </>
   );
 }
 

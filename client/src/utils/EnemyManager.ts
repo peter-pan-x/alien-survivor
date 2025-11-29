@@ -58,25 +58,26 @@ export class EnemyManager {
     }
   }
 
-  private getSpawnInterval(survivalTime: number, playerLevel: number): number {
+  private getSpawnInterval(_survivalTime: number, playerLevel: number): number {
     // 基于等级的刷新间隔：大幅降低增长速度
     const baseInterval = GAME_CONFIG.ENEMY.INITIAL_SPAWN_INTERVAL;
     const minInterval = GAME_CONFIG.ENEMY.MIN_SPAWN_INTERVAL;
 
-    // 大幅降低等级缩放：每级仅增加6%速度（减少间隔）
-    const perLevel = 0.94; // 从0.88调整为0.94，降低敌人生长速度
+    // 每级仅增加4%速度（从6%降至4%），7-10级更平缓
+    const perLevel = 0.96;
     const levelMultiplier = Math.pow(perLevel, Math.max(0, playerLevel - 1));
     const interval = baseInterval * levelMultiplier;
 
     return Math.max(interval, minInterval);
   }
 
-  private getSpawnCount(survivalTime: number, playerLevel: number): number {
+  private getSpawnCount(_survivalTime: number, playerLevel: number): number {
     // 大幅降低生成数量增长，让游戏节奏更平缓
-    if (playerLevel < 6) return 1;      // 前5级只生成1个
-    if (playerLevel < 12) return 2;     // 6-11级生成2个
-    if (playerLevel < 20) return 3;     // 12-19级生成3个
-    if (playerLevel < 30) return 4;     // 20-29级生成4个
+    // 7-10级难度曲线优化：延后数量翻倍节点
+    if (playerLevel < 10) return 1;     // 前9级只生成1个（原6级）
+    if (playerLevel < 16) return 2;     // 10-15级生成2个（原6-11级）
+    if (playerLevel < 24) return 3;     // 16-23级生成3个（原12-19级）
+    if (playerLevel < 32) return 4;     // 24-31级生成4个（原20-29级）
     // 30级之后每8级增加1个，增长极其缓慢
     const additional = Math.floor((playerLevel - 30) / 8);
     return Math.min(4 + additional, 6); // 上限降低到6个
@@ -206,9 +207,15 @@ export class EnemyManager {
 
     const computedMaxHealth = baseHealth * timeMultiplier * globalHealthMultiplier;
 
-    // 基于血量缩放体型（半径），使用平方根缓和增长，并限制范围
+    // 基于血量缩放体型（半径）优化：让血量差异更明显地体现在体型上
     const healthScale = Math.sqrt(computedMaxHealth / Math.max(1, baseHealth));
-    const radiusScale = Math.min(1.75, Math.max(0.9, healthScale));
+    // 扩大缩放范围：从1.75提升到3.0，让高血量怪物明显更大
+    const radiusScale = Math.min(3.0, Math.max(0.95, healthScale * 1.2));
+
+    // 速度增长优化：初始几级速度较快，10级（约90秒）后恢复正常曲线
+    // 早期加速因子：初始+25%，90秒内衰减到0
+    const earlyBoost = 0.25 * Math.exp(-survivalTime / 90);
+    const speedMultiplier = 0.90 + 0.30 * Math.pow(timeMultiplier, 0.25) + earlyBoost;
 
     const enemy: Enemy = {
       x,
@@ -216,7 +223,7 @@ export class EnemyManager {
       radius: Math.floor(typeConfig.radius * radiusScale),
       health: computedMaxHealth,
       maxHealth: computedMaxHealth,
-      speed: Math.min(baseSpeed * timeMultiplier, GAME_CONFIG.ENEMY.MAX_SPEED),
+      speed: Math.min(baseSpeed * speedMultiplier, GAME_CONFIG.ENEMY.MAX_SPEED),
       angle: 0,
       type,
     };
@@ -233,31 +240,44 @@ export class EnemyManager {
 
   public updateEnemies(
     player: Player,
-    deltaTime: number,
+    _deltaTime: number,
     canvasWidth: number,
     canvasHeight: number,
     currentTime: number,
-    enemyBullets: Bullet[]
+    enemyBullets: Bullet[],
+    checkObstacle?: (x: number, y: number, radius: number) => boolean
   ): void {
+    const now = Date.now();
     for (const enemy of this.enemies) {
+      // 冰冻状态检查：冰冻期间无法移动和攻击
+      if (enemy.frozenUntil && now < enemy.frozenUntil) {
+        continue; // 跳过此敌人的更新
+      }
+
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+      const distanceSq = dx * dx + dy * dy; // 优化：使用距离平方
 
       enemy.angle = Math.atan2(dy, dx);
+
+      // 计算原本的位移
+      let moveX = 0;
+      let moveY = 0;
 
       if (enemy.type === 'shooter') {
         // 射手保持距离并射击
         const shootRange = GAME_CONFIG.ENEMY.TYPES.shooter.shootRange || 250;
+        const shootRangeSq = shootRange * shootRange;
+        const innerRangeSq = (shootRange - 50) * (shootRange - 50);
         
-        if (distance > shootRange) {
+        if (distanceSq > shootRangeSq) {
           // 靠近玩家
-          enemy.x += Math.cos(enemy.angle) * enemy.speed;
-          enemy.y += Math.sin(enemy.angle) * enemy.speed;
-        } else if (distance < shootRange - 50) {
+          moveX = Math.cos(enemy.angle) * enemy.speed;
+          moveY = Math.sin(enemy.angle) * enemy.speed;
+        } else if (distanceSq < innerRangeSq) {
           // 远离玩家
-          enemy.x -= Math.cos(enemy.angle) * enemy.speed * 0.5;
-          enemy.y -= Math.sin(enemy.angle) * enemy.speed * 0.5;
+          moveX = -Math.cos(enemy.angle) * enemy.speed * 0.5;
+          moveY = -Math.sin(enemy.angle) * enemy.speed * 0.5;
         }
 
         // 射击
@@ -269,9 +289,56 @@ export class EnemyManager {
         }
       } else {
         // 其他类型直接追踪玩家
-        enemy.x += Math.cos(enemy.angle) * enemy.speed;
-        enemy.y += Math.sin(enemy.angle) * enemy.speed;
+        moveX = Math.cos(enemy.angle) * enemy.speed;
+        moveY = Math.sin(enemy.angle) * enemy.speed;
       }
+
+      // 尝试移动并进行碰撞检测（带绕行逻辑）
+      let nextX = enemy.x + moveX;
+      let nextY = enemy.y + moveY;
+
+      if (checkObstacle) {
+        const blocked = checkObstacle(nextX, nextY, enemy.radius);
+        
+        if (blocked) {
+          // 尝试分轴移动
+          const xBlocked = checkObstacle(nextX, enemy.y, enemy.radius);
+          const yBlocked = checkObstacle(enemy.x, nextY, enemy.radius);
+          
+          if (xBlocked && !yBlocked) {
+            // X轴被挡，只走Y轴
+            nextX = enemy.x;
+          } else if (!xBlocked && yBlocked) {
+            // Y轴被挡，只走X轴
+            nextY = enemy.y;
+          } else if (xBlocked && yBlocked) {
+            // 两轴都被挡，尝试绕行（沿垂直方向偏移）
+            const perpX = -moveY; // 垂直方向
+            const perpY = moveX;
+            
+            // 尝试向左或向右绕行
+            const slideX1 = enemy.x + perpX * 0.8;
+            const slideY1 = enemy.y + perpY * 0.8;
+            const slideX2 = enemy.x - perpX * 0.8;
+            const slideY2 = enemy.y - perpY * 0.8;
+            
+            if (!checkObstacle(slideX1, slideY1, enemy.radius)) {
+              nextX = slideX1;
+              nextY = slideY1;
+            } else if (!checkObstacle(slideX2, slideY2, enemy.radius)) {
+              nextX = slideX2;
+              nextY = slideY2;
+            } else {
+              // 完全被卡住，保持原位
+              nextX = enemy.x;
+              nextY = enemy.y;
+            }
+          }
+        }
+      }
+
+      enemy.x = nextX;
+      enemy.y = nextY;
 
       // 边界检查（防止敌人走太远）
       const maxDistance = Math.max(canvasWidth, canvasHeight) * 2;
@@ -288,12 +355,18 @@ export class EnemyManager {
 
     if (distance === 0) return;
 
-    const baseDamage = GAME_CONFIG.ENEMY.TYPES.shooter.damage;
+    const shooterConfig = GAME_CONFIG.ENEMY.TYPES.shooter;
+    const baseDamage = shooterConfig.damage;
     const levelMultiplier = Math.pow(
       GAME_CONFIG.ENEMY.DAMAGE_PER_LEVEL_MULTIPLIER ?? 1.22,
       player.level - 1
     );
     const scaledDamage = baseDamage * levelMultiplier;
+
+    // 子弹最大距离随等级增加
+    const baseDistance = (shooterConfig as { bulletMaxDistance?: number }).bulletMaxDistance ?? 350;
+    const distancePerLevel = (shooterConfig as { bulletDistancePerLevel?: number }).bulletDistancePerLevel ?? 20;
+    const maxDistance = baseDistance + distancePerLevel * (player.level - 1);
 
     const bullet: Bullet = {
       x: enemy.x,
@@ -303,6 +376,9 @@ export class EnemyManager {
       radius: 5,
       damage: scaledDamage,
       isEnemyBullet: true,
+      startX: enemy.x, // 记录起始位置
+      startY: enemy.y,
+      maxDistance: maxDistance, // 最大飞行距离
     };
 
     enemyBullets.push(bullet);

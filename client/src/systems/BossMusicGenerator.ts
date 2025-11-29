@@ -4,7 +4,7 @@
  * 使用小调和快速节奏营造压迫感
  */
 
-import { BossMusicConfig, BOSS_MELODY } from "./SoundConfig";
+import { BossMusicConfig, BOSS_MELODY, BOSS_MUSIC_CONFIG } from "./SoundConfig";
 
 export class BossMusicGenerator {
   private audioContext: AudioContext;

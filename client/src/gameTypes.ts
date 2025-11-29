@@ -25,10 +25,10 @@ export interface Player {
   // 暴击相关
   critChance: number; // 0-1 几率
   critMultiplier: number; // 暴击伤害系数，例如 2.0
-  // AOE 爆炸相关
-  hasAOEExplosion: boolean;
-  aoeDamage: number; // 爆炸伤害
-  aoeRadius: number; // 爆炸范围半径
+  // 分裂子弹相关（原 AOE 爆炸）
+  hasAOEExplosion: boolean; // 是否有分裂子弹
+  aoeDamage: number; // 分裂子弹伤害百分比（0.3 = 30%）
+  aoeRadius: number; // 分裂子弹飞行距离
   // 子弹穿透相关
   pierceCount: number; // 子弹可以穿透的敌人数量
   pierceDamageReduction: number; // 穿透伤害递减系数（每次穿透后伤害 * 系数）
@@ -37,6 +37,19 @@ export interface Player {
   // 技能出现次数映射（用于特殊技能按"出现"递减概率）
   skillAppearances?: Record<string, number>;
   weapons: ActiveWeapon[];
+  // 经验球拾取范围
+  pickupRange: number;
+  // 遇强则强：攻击额外附带生命值百分比的伤害
+  strengthBonus?: number; // 0.3 = 30%生命值伤害
+  // 冰冻射击：子弹伤害加成和冰冻时长
+  hasFrostShot?: boolean;
+  frostDamageBonus?: number; // 伤害加成（0.2 = 20%）
+  frostDuration?: number; // 冰冻时长（毫秒）
+  // 火焰攻击：伤害加成和燃烧效果
+  hasFlameAttack?: boolean;
+  flameDamageBonus?: number; // 伤害加成（0.2 = 20%）
+  flameBurnDamage?: number; // 燃烧伤害百分比（0.1 = 10%）
+  flameBurnDuration?: number; // 燃烧持续时间（毫秒）
 }
 
 export type EnemyType = 'swarm' | 'rusher' | 'shooter' | 'elite' | 'spider' | 'crab' | 'bigeye' | 'frog';
@@ -53,6 +66,12 @@ export interface Enemy {
   shootCooldown?: number;
   lastShotTime?: number;
   id?: number; // 敌人唯一ID，用于穿透子弹追踪
+  // 冰冻状态
+  frozenUntil?: number; // 冰冻结束时间戳
+  // 燃烧状态
+  burningUntil?: number; // 燃烧结束时间戳
+  burnDamagePerTick?: number; // 每次燃烧伤害
+  lastBurnTick?: number; // 上次燃烧伤害时间
 }
 
 export type BossType = 'level10' | 'level20' | 'level30' | 'level40' | 'level50';
@@ -90,6 +109,8 @@ export interface Tree {
   type: 'small' | 'medium' | 'large';
   // 每棵树的颜色深浅系数（用于渲染变体）
   shade?: number;
+  // 树木形状种子（用于生成固定的不规则形状）
+  seed?: number;
 }
 
 export interface Bullet {
@@ -106,6 +127,10 @@ export interface Bullet {
   hitEnemies?: Set<number>; // 记录这颗子弹已经伤害过的敌人（通过ID）
   originalDamage?: number; // 原始伤害（用于计算递减伤害）
   isEnemyBullet?: boolean;
+  // 敌人/Boss子弹距离限制
+  startX?: number; // 起始位置 X
+  startY?: number; // 起始位置 Y
+  maxDistance?: number; // 最大飞行距离
 }
 
 export interface Particle {
@@ -126,6 +151,7 @@ export interface DamageNumber {
   life: number;
   maxLife: number;
   vy: number;
+  isCrit?: boolean; // 是否为暴击
 }
 
 export type GameState = "menu" | "playing" | "paused" | "levelup" | "gameover";
@@ -136,6 +162,9 @@ export interface ActiveWeapon {
   type: WeaponType;
   level: number;
   lastActivation: number;
+  // 闪电链武器的渲染数据
+  lightningTargets?: Enemy[];
+  lightningTime?: number;
 }
 
 export interface Joystick {

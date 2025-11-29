@@ -2,9 +2,8 @@
 export const GAME_CONFIG = {
   // 画布尺寸
   CANVAS: {
-    MAX_WIDTH: 1080,  // 手机横屏宽度
-    MAX_HEIGHT: 1920, // 手机竖屏高度
     GRID_SIZE: 40,
+    MOBILE_QUALITY_SCALE: 0.85, // 移动端渲染质量缩放（提升性能）
   },
 
   // 玩家初始属性
@@ -20,6 +19,7 @@ export const GAME_CONFIG = {
     INITIAL_MOVE_SPEED: 3,
     MAX_MOVE_SPEED: 8,
     DAMAGE_COOLDOWN: 500, // 受伤无敌时间（毫秒）
+    STARTUP_PROTECTION_TIME: 2000, // 游戏开始保护期（毫秒）
   },
 
   // 虚拟摇杆配置
@@ -40,7 +40,7 @@ export const GAME_CONFIG = {
     BASE_HEALTH: 15,
     // 下调：每10击杀的血量增量，从5降至2（更平滑）
     HEALTH_INCREMENT_PER_10_KILLS: 2,
-    BASE_SPEED: 0.6, // 降低基础速度25%（从0.8降至0.6），给玩家更多反应时间
+    BASE_SPEED: 0.95, // 提升基础速度（从0.6升至0.95），8级前敌人更具挑战性
     SPEED_INCREMENT_PER_20_KILLS: 0.15,
     MAX_SPEED: 2.5,
     INITIAL_SPAWN_INTERVAL: 1500,
@@ -60,58 +60,60 @@ export const GAME_CONFIG = {
       swarm: {
         radius: 16, // 从8增加到16，放大一倍
         healthMultiplier: 0.5,
-        speedMultiplier: 0.4, // 进一步降低速度（从0.6降至0.4）
+        speedMultiplier: 0.65, // 提升速度（从0.4升至0.65）
         damage: 4, // 从3增加到4
         spawnWeight: 0.5,
       },
       rusher: {
         radius: 24, // 从12增加到24，放大一倍
         healthMultiplier: 1.0,
-        speedMultiplier: 0.68, // 进一步降低速度（从0.85降至0.68）
+        speedMultiplier: 0.85, // 提升速度（从0.68升至0.85）
         damage: 6, // 从5增加到6
         spawnWeight: 0.3,
       },
       shooter: {
         radius: 20, // 从10增加到20，放大一倍
         healthMultiplier: 0.8,
-        speedMultiplier: 0.4, // 进一步降低速度（从0.5降至0.4）
+        speedMultiplier: 0.55, // 提升速度（从0.4升至0.55）
         damage: 5, // 从4增加到5
-        shootCooldown: 2000,
+        shootCooldown: 8000, // 冷却时间再翻倍（从4000增加到8000），大幅降低射击频率
         shootRange: 250,
-        spawnWeight: 0.15,
+        spawnWeight: 0.08, // 生成权重减半（从0.15降到0.08），减少出现数量
+        bulletMaxDistance: 200, // 子弹最大飞行距离（基础值），缩短为200
+        bulletDistancePerLevel: 15, // 每等级增加的距离
       },
       elite: {
         radius: 36, // 从18增加到36，放大一倍
         healthMultiplier: 3.0,
-        speedMultiplier: 0.34, // 进一步降低速度（从0.43降至0.34）
+        speedMultiplier: 0.50, // 提升速度（从0.34升至0.50）
         damage: 10, // 从8增加到10
         spawnWeight: 0.05,
       },
       spider: {
         radius: 18,
         healthMultiplier: 0.7,
-        speedMultiplier: 0.78, // 进一步降低速度（从0.98降至0.78）
+        speedMultiplier: 0.95, // 提升速度（从0.78升至0.95）
         damage: 5,
         spawnWeight: 0.2,
       },
       crab: {
         radius: 22,
         healthMultiplier: 1.4,
-        speedMultiplier: 0.54, // 进一步降低速度（从0.68降至0.54）
+        speedMultiplier: 0.70, // 提升速度（从0.54升至0.70）
         damage: 7,
         spawnWeight: 0.15,
       },
       bigeye: {
         radius: 20,
         healthMultiplier: 1.2,
-        speedMultiplier: 0.61, // 进一步降低速度（从0.76降至0.61）
+        speedMultiplier: 0.75, // 提升速度（从0.61升至0.75）
         damage: 6,
         spawnWeight: 0.15,
       },
       frog: {
         radius: 20,
         healthMultiplier: 1.0,
-        speedMultiplier: 0.71, // 进一步降低速度（从0.89降至0.71）
+        speedMultiplier: 0.88, // 提升速度（从0.71升至0.88）
         damage: 6,
         spawnWeight: 0.2,
       },
@@ -139,12 +141,13 @@ export const GAME_CONFIG = {
   // 升级系统
   LEVELING: {
     EXP_PER_KILL: 8, // 降低到8，升级速度减半
-    EXP_MULTIPLIER: 80, // 保持不变（在calculateExpNeeded中已减半）
-    EXP_MULTIPLIER_PER_LEVEL: 80,
+    EXP_MULTIPLIER: 56, // 减少30%（从80降到56）
+    EXP_MULTIPLIER_PER_LEVEL: 56, // 同步减少30%
     SCORE_PER_KILL: 10,
+    SCORE_PER_BOSS_KILL: 1000, // Boss击败奖励分数
     // 新增：升级需求规则
-    BASE_KILLS_FOR_FIRST_LEVEL: 5, // 首次升级需要击杀5个敌人
-    GROWTH_RATE: 1.33, // 之后每级在上一级基础上增加33%
+    BASE_KILLS_FOR_FIRST_LEVEL: 4, // 首次升级需要击杀4个敌人（从5降到4，减少20%）
+    GROWTH_RATE: 1.20, // 之后每级在上一级基础上增加20%（从1.25降到1.20）
     BOSS_EXP_REWARD_MULTIPLIER: 50, // Boss 经验奖励倍率（集中管理）
   },
 
@@ -163,13 +166,13 @@ export const GAME_CONFIG = {
     // 稀有技能权重乘数：降低33%出现概率
     RARE_WEIGHT_MULTIPLIER: 0.67,
     // 暴击与AOE配置
-    CRIT_MULTIPLIER_BASE: 2.0,
-    CRIT_CHANCE_INCREMENT: 0.05, // 每次 +5%
-    CRIT_CHANCE_MAX: 0.5, // 上限 50%
+    CRIT_MULTIPLIER_BASE: 1.5, // 暴击伤害倍数（优化：从2.0改为1.5倍）
+    CRIT_CHANCE_INCREMENT: 0.20, // 每次 +20%（优化：从5%提升到20%，前期更明显）
+    CRIT_CHANCE_MAX: 0.8, // 上限 80%（从50%提升）
     CRIT_MULTIPLIER_INCREMENT: 0.25, // 每次 +0.25x
     CRIT_MULTIPLIER_MAX: 4.0, // 上限 4x
-    AOE_DAMAGE_BASE: 8,
-    AOE_DAMAGE_INCREMENT: 6,
+    AOE_DAMAGE_BASE: 12, // 爆炸基础伤害（优化：从8提升到12，提升50%）
+    AOE_DAMAGE_INCREMENT: 9, // 每次升级增加伤害（优化：从6提升到9，提升50%）
     AOE_RADIUS: 80,
   },
 
@@ -177,14 +180,14 @@ export const GAME_CONFIG = {
   TREES: {
     // 开局预生成的半径（以玩家为中心）
     PREGENERATE_RADIUS: 1200,
-    // 是否在玩家周围动态补充生成（默认关闭以避免“身边刷新”）
-    DYNAMIC_UPDATE_ENABLED: false,
+    // 是否在玩家周围动态补充生成
+    DYNAMIC_UPDATE_ENABLED: true,
   },
 
   // 碰撞范围配置（极限优化，完全消除隐形围墙）
   COLLISION: {
-    // 玩家 vs 树木：使用极限像素级精确碰撞（0.58 = 真实像素接触）
-    PLAYER_VS_TREE_RADIUS_MULTIPLIER: 0.58,
+    // 玩家 vs 树木
+    PLAYER_VS_TREE_RADIUS_MULTIPLIER: 0.65,
     // 玩家 vs 敌人���保持正常碰撞判定
     PLAYER_VS_ENEMY_PLAYER_RADIUS_MULTIPLIER: 1.0,
     // 敌人 vs 玩家：保持正常碰撞判定
@@ -193,6 +196,9 @@ export const GAME_CONFIG = {
     TREE_BLOCK_ANGLE: 120,
     // 新增：最小阻挡距离 - 彻底消除，只在物理接触时阻挡
     TREE_MIN_BLOCK_DISTANCE: 0,
+    // 子弹碰撞检测查询半径（额外范围）
+    BULLET_QUERY_EXTRA_RADIUS: 30,
+    BULLET_QUERY_SAFETY_MARGIN: 10,
   },
 
   // 新武器系统配置
@@ -274,13 +280,13 @@ export const SKILLS: Skill[] = [
   { id: "attack_boost", name: "攻击强化", description: "攻击力 +5", type: "attack", icon: "⚔️" },
   { id: "speed_boost", name: "速度强化", description: "攻击速度 +15%", type: "attack", icon: "⚡" },
   { id: "range_boost", name: "射程强化", description: "攻击范围 +50", type: "attack", icon: "🎯" },
-  { id: "multi_shot", name: "多重射击", description: "子弹数量 +1", type: "attack", icon: "🔫" },
-  { id: "critical_chance", name: "暴击几率", description: "暴击几率 +5%", type: "attack", icon: "❗" },
+  { id: "multi_shot", name: "多重射击", description: "子弹数量 +1，伤害 -20%", type: "attack", icon: "🔫" },
+  { id: "critical_chance", name: "暴击几率", description: "暴击几率 +20%", type: "attack", icon: "❗" },
   { id: "critical_damage", name: "暴击伤害", description: "暴击伤害系数 +0.25x", type: "attack", icon: "✨" },
   { id: "shield_boost", name: "护盾强化", description: "最大护盾 +20", type: "shield", icon: "🛡️" },
   { id: "pierce_shot", name: "穿透射击", description: "子弹可穿透敌人", type: "special", icon: "💥" },
   { id: "life_steal", name: "生命汲取", description: "击杀敌人恢复1点生命（可重复选择，每次+1）", type: "special", icon: "🩸" },
-  { id: "bullet_size", name: "子弹增幅", description: "子弹体积 +50%", type: "attack", icon: "🔵" },
+  { id: "bullet_size", name: "子弹增幅", description: "子弹体积 +50%，伤害 +30%", type: "attack", icon: "🔵" },
   { id: "move_speed", name: "移动加速", description: "移动速度 +20%", type: "special", icon: "💨" },
   { id: "orbital_drone", name: "轨道无人机", description: "获得环绕的攻击无人机", type: "special", icon: "🛸" },
   { id: "lightning_chain", name: "闪电链", description: "定期释放连锁闪电", type: "special", icon: "⚡" },
