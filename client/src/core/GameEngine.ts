@@ -1462,11 +1462,6 @@ export class GameEngine {
     // 渲染屏幕空间的UI（HUD和性能监控）
     this.renderHUD();
     this.performanceMonitor.render(this.ctx);
-    
-    // 渲染虚拟摇杆（移动端）
-    if (this.virtualJoystick) {
-      this.virtualJoystick.render(this.ctx);
-    }
   }
 
   /**
