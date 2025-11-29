@@ -62,30 +62,38 @@ export class VirtualJoystick {
   }
 
   private handleTouchStart(e: TouchEvent) {
+    // 如果有残留的 touchId，先重置
+    if (this.touchId !== null && e.touches.length === 1) {
+      // 新的触摸开始，重置之前可能卡住的状态
+      this.touchId = null;
+      this.deactivateJoystick();
+    }
+    
     // 只处理第一个触摸点
     if (this.touchId !== null) return;
     
     const touch = e.touches[0];
-    const rect = this.canvas.getBoundingClientRect();
+    // 每次触摸都更新 rect，确保在 UI 变化后也能正确计算
+    this.canvasRect = this.canvas.getBoundingClientRect();
+    const rect = this.canvasRect;
     const x = touch.clientX - rect.left;
     const y = touch.clientY - rect.top;
     
-    // 检查触摸是否在 canvas 范围内
-    if (x < 0 || x > rect.width || y < 0 || y > rect.height) {
+    // 检查触摸是否在 canvas 范围内（允许一定容差）
+    if (x < -10 || x > rect.width + 10 || y < -10 || y > rect.height + 10) {
       return;
     }
     
-    // 移动端：左半屏幕区域用于移动控制
+    // 移动端：全屏区域都可以触发（更灵敏）
     // 桌面端：下半部分用于移动控制
     const isValidArea = this.isMobile 
-      ? (x < rect.width * 0.6)  // 移动端：左侧60%区域
+      ? true  // 移动端：任意位置都可触发
       : (y > rect.height / 2);   // 桌面端：下半部分
     
     if (isValidArea) {
       e.preventDefault();
       this.touchId = touch.identifier;
       this.activateJoystick(x, y);
-      console.log('[VirtualJoystick] Touch started at:', x, y);
     }
   }
 

@@ -179,6 +179,22 @@ function PixelMainMenu({
   stats: GameStats;
   onStartGame: () => void;
 }) {
+  // 检测移动端
+  const isMobile = window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  
+  // 全屏切换
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (e) {
+      console.log('Fullscreen not supported');
+    }
+  };
+  
   return (
     <div
       className="pixel-bg"
@@ -189,44 +205,76 @@ function PixelMainMenu({
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '32px',
+        gap: isMobile ? '16px' : '32px',
         zIndex: 50,
+        padding: isMobile ? '16px' : '0',
+        overflow: 'auto',
       }}
     >
+      {/* 全屏按钮 - 移动端显示 */}
+      {isMobile && (
+        <button
+          onClick={toggleFullscreen}
+          style={{
+            position: 'absolute',
+            top: '12px',
+            right: '12px',
+            padding: '8px 12px',
+            background: '#2d3748',
+            border: '2px solid #4a5568',
+            color: '#fff',
+            fontSize: '12px',
+            cursor: 'pointer',
+            zIndex: 100,
+          }}
+        >
+          ⛶ 全屏
+        </button>
+      )}
+
       {/* 标题 */}
       <div style={{ textAlign: 'center' }}>
-        <h1 className="pixel-title pixel-title-large">异星幸存者</h1>
-        <p className="pixel-text" style={{ fontSize: '18px', marginTop: '8px' }}>
+        <h1 className="pixel-title pixel-title-large" style={{ fontSize: isMobile ? '28px' : '48px' }}>异星幸存者</h1>
+        <p className="pixel-text" style={{ fontSize: isMobile ? '14px' : '18px', marginTop: '8px' }}>
           ALIEN SURVIVOR
         </p>
       </div>
 
       {/* 最高分 */}
       {stats.highScore > 0 && (
-        <div className="pixel-panel" style={{ textAlign: 'center', minWidth: '300px' }}>
-          <div className="pixel-label" style={{ marginBottom: '8px' }}>
+        <div className="pixel-panel" style={{ textAlign: 'center', minWidth: isMobile ? '200px' : '300px', padding: isMobile ? '12px' : '16px' }}>
+          <div className="pixel-label" style={{ marginBottom: '8px', fontSize: isMobile ? '12px' : '14px' }}>
             HIGH SCORE
           </div>
-          <div className="pixel-number" style={{ fontSize: '32px' }}>
+          <div className="pixel-number" style={{ fontSize: isMobile ? '24px' : '32px' }}>
             {stats.highScore.toLocaleString()}
           </div>
         </div>
       )}
 
       {/* 开始按钮 */}
-      <PixelButton onClick={onStartGame} size="large" variant="primary">
+      <PixelButton onClick={onStartGame} size={isMobile ? 'normal' : 'large'} variant="primary">
         ▶ START GAME
       </PixelButton>
 
-      {/* 说明 */}
-      <div className="pixel-panel" style={{ maxWidth: '400px', textAlign: 'center' }}>
-        <div className="pixel-label" style={{ marginBottom: '12px' }}>
+      {/* 说明 - 移动端简化 */}
+      <div className="pixel-panel" style={{ maxWidth: isMobile ? '280px' : '400px', textAlign: 'center', padding: isMobile ? '12px' : '16px' }}>
+        <div className="pixel-label" style={{ marginBottom: '8px', fontSize: isMobile ? '12px' : '14px' }}>
           CONTROLS
         </div>
-        <div className="pixel-text" style={{ fontSize: '14px', lineHeight: '1.6' }}>
-          <div>WASD / ARROWS - MOVE</div>
-          <div>MOUSE - AIM</div>
-          <div>ESC - PAUSE</div>
+        <div className="pixel-text" style={{ fontSize: isMobile ? '11px' : '14px', lineHeight: '1.6' }}>
+          {isMobile ? (
+            <>
+              <div>左侧滑动 - 移动</div>
+              <div>自动瞄准射击</div>
+            </>
+          ) : (
+            <>
+              <div>WASD / ARROWS - MOVE</div>
+              <div>MOUSE - AIM</div>
+              <div>ESC - PAUSE</div>
+            </>
+          )}
         </div>
       </div>
 
@@ -237,7 +285,7 @@ function PixelMainMenu({
           fontSize: '12px',
           color: '#718096',
           textAlign: 'center',
-          marginTop: '16px',
+          marginTop: isMobile ? '8px' : '16px',
           fontStyle: 'italic'
         }}
       >
@@ -257,6 +305,9 @@ function PixelLevelUp({
   skillOptions: SkillEffect[];
   onSelectSkill: (skill: SkillEffect) => void;
 }) {
+  // 检测移动端
+  const isMobile = window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  
   return (
     <div
       style={{
@@ -265,27 +316,39 @@ function PixelLevelUp({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'rgba(0, 0, 0, 0.8)',
+        background: 'rgba(0, 0, 0, 0.85)',
         zIndex: 50,
+        padding: isMobile ? '8px' : '16px',
+        overflow: 'auto',
       }}
     >
-      <div className="pixel-panel" style={{ maxWidth: '800px', width: '90%' }}>
+      <div className="pixel-panel" style={{ 
+        maxWidth: isMobile ? '100%' : '800px', 
+        width: '100%',
+        padding: isMobile ? '12px' : '24px',
+        maxHeight: '100%',
+        overflow: 'auto',
+      }}>
         {/* 标题 */}
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <h2 className="pixel-title" style={{ fontSize: '36px', color: '#fbbf24' }}>
+        <div style={{ textAlign: 'center', marginBottom: isMobile ? '12px' : '24px' }}>
+          <h2 className="pixel-title" style={{ fontSize: isMobile ? '24px' : '36px', color: '#fbbf24' }}>
             LEVEL UP!
           </h2>
-          <div className="pixel-label" style={{ marginTop: '8px' }}>
+          <div className="pixel-label" style={{ marginTop: '4px', fontSize: isMobile ? '12px' : '14px' }}>
             CHOOSE A SKILL
           </div>
         </div>
 
-        {/* 技能选项 */}
+        {/* 技能选项 - 移动端横向排列 */}
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '16px',
+            display: 'flex',
+            flexDirection: isMobile ? 'row' : 'row',
+            flexWrap: isMobile ? 'nowrap' : 'wrap',
+            gap: isMobile ? '8px' : '16px',
+            justifyContent: 'center',
+            overflowX: isMobile ? 'auto' : 'visible',
+            paddingBottom: isMobile ? '8px' : '0',
           }}
         >
           {skillOptions.map((skill) => (
@@ -294,10 +357,13 @@ function PixelLevelUp({
               className="pixel-card"
               onClick={() => onSelectSkill(skill)}
               style={{
-                padding: '20px',
+                padding: isMobile ? '10px' : '20px',
                 textAlign: 'center',
                 cursor: 'pointer',
                 transition: 'transform 0.1s',
+                minWidth: isMobile ? '100px' : '180px',
+                maxWidth: isMobile ? '120px' : '220px',
+                flex: isMobile ? '0 0 auto' : '1 1 180px',
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = 'scale(1.05)';
@@ -309,65 +375,73 @@ function PixelLevelUp({
               }}
             >
               {/* 图标 */}
-              <div style={{ fontSize: '48px', marginBottom: '12px' }}>{skill.icon}</div>
+              <div style={{ fontSize: isMobile ? '28px' : '48px', marginBottom: isMobile ? '6px' : '12px' }}>{skill.icon}</div>
 
               {/* 名称 */}
-              <div className="pixel-text" style={{ fontSize: '18px', marginBottom: '8px' }}>
+              <div className="pixel-text" style={{ fontSize: isMobile ? '12px' : '18px', marginBottom: isMobile ? '4px' : '8px' }}>
                 {skill.name}
               </div>
 
-              {/* 描述 */}
-              <div className="pixel-label" style={{ fontSize: '12px', color: '#cbd5e0' }}>
+              {/* 描述 - 移动端简化 */}
+              <div className="pixel-label" style={{ 
+                fontSize: isMobile ? '9px' : '12px', 
+                color: '#cbd5e0',
+                lineHeight: '1.2',
+                maxHeight: isMobile ? '32px' : 'none',
+                overflow: 'hidden',
+              }}>
                 {skill.description}
               </div>
 
-              {/* 类型标签 */}
-              <div
-                style={{
-                  marginTop: '12px',
-                  padding: '4px 8px',
-                  background: '#1a202c',
-                  border: '2px solid #4a5568',
-                  display: 'inline-block',
-                  fontSize: '10px',
-                  textTransform: 'uppercase',
-                  color: '#cbd5e0',
-                  marginRight: '4px',
-                }}
-              >
-                {skill.type}
-              </div>
+              {/* 类型和稀有度标签 - 移动端隐藏类型 */}
+              <div style={{ marginTop: isMobile ? '6px' : '12px' }}>
+                {!isMobile && (
+                  <span
+                    style={{
+                      padding: '4px 8px',
+                      background: '#1a202c',
+                      border: '2px solid #4a5568',
+                      display: 'inline-block',
+                      fontSize: '10px',
+                      textTransform: 'uppercase',
+                      color: '#cbd5e0',
+                      marginRight: '4px',
+                    }}
+                  >
+                    {skill.type}
+                  </span>
+                )}
 
-              {/* 稀有度标签 */}
-              {skill.rarity && (
-                <div
-                  style={{
-                    marginTop: '12px',
-                    padding: '4px 8px',
-                    display: 'inline-block',
-                    fontSize: '10px',
-                    textTransform: 'uppercase',
-                    fontWeight: 'bold',
-                    ...(skill.rarity === 'epic'
-                      ? {
-                        background: '#553c9a',
-                        border: '2px solid #6b46c1',
-                        color: '#e9d5ff',
-                        boxShadow: '0 0 8px rgba(139, 92, 246, 0.6)',
-                      }
-                      : skill.rarity === 'rare'
+                {/* 稀有度标签 */}
+                {skill.rarity && (
+                  <span
+                    style={{
+                      padding: isMobile ? '2px 4px' : '4px 8px',
+                      display: 'inline-block',
+                      fontSize: isMobile ? '8px' : '10px',
+                      textTransform: 'uppercase',
+                      fontWeight: 'bold',
+                      ...(skill.rarity === 'epic'
                         ? {
-                          background: '#065f46',
-                          border: '2px solid #047857',
-                          color: '#a7f3d0',
-                          boxShadow: '0 0 6px rgba(16, 185, 129, 0.4)',
+                          background: '#553c9a',
+                          border: '2px solid #6b46c1',
+                          color: '#e9d5ff',
+                          boxShadow: '0 0 8px rgba(139, 92, 246, 0.6)',
                         }
-                        : {}),
-                  }}
-                >
-                  {skill.rarity === 'epic' ? '史诗' : skill.rarity === 'rare' ? '稀有' : ''}
-                </div>
-              )}
+                        : skill.rarity === 'rare'
+                          ? {
+                            background: '#065f46',
+                            border: '2px solid #047857',
+                            color: '#a7f3d0',
+                            boxShadow: '0 0 6px rgba(16, 185, 129, 0.4)',
+                          }
+                          : {}),
+                    }}
+                  >
+                    {skill.rarity === 'epic' ? '史诗' : skill.rarity === 'rare' ? '稀有' : ''}
+                  </span>
+                )}
+              </div>
             </button>
           ))}
         </div>

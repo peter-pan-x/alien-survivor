@@ -244,6 +244,12 @@ export default function Game() {
 
     // 继续游戏
     setGameState("playing");
+    
+    // 延迟一帧后更新摇杆状态，确保 canvas 已经显示
+    requestAnimationFrame(() => {
+      virtualJoystickRef.current?.updateCanvasRect();
+    });
+    
     engine.start();
   };
 
