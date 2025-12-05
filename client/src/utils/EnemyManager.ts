@@ -64,7 +64,7 @@ export class EnemyManager {
     const minInterval = GAME_CONFIG.ENEMY.MIN_SPAWN_INTERVAL;
 
     // 每级仅增加4%速度（从6%降至4%），7-10级更平缓
-    const perLevel = 0.96;
+    const perLevel = GAME_CONFIG.ENEMY.SPAWN_INTERVAL_PER_LEVEL_MULTIPLIER ?? 0.95;
     const levelMultiplier = Math.pow(perLevel, Math.max(0, playerLevel - 1));
     const interval = baseInterval * levelMultiplier;
 
@@ -74,13 +74,13 @@ export class EnemyManager {
   private getSpawnCount(_survivalTime: number, playerLevel: number): number {
     // 大幅降低生成数量增长，让游戏节奏更平缓
     // 7-10级难度曲线优化：延后数量翻倍节点
-    if (playerLevel < 10) return 1;     // 前9级只生成1个（原6级）
-    if (playerLevel < 16) return 2;     // 10-15级生成2个（原6-11级）
-    if (playerLevel < 24) return 3;     // 16-23级生成3个（原12-19级）
-    if (playerLevel < 32) return 4;     // 24-31级生成4个（原20-29级）
-    // 30级之后每8级增加1个，增长极其缓慢
+    if (playerLevel < 4) return 1;      // 1-3级生成1个
+    if (playerLevel < 10) return 2;     // 4-9级生成2个（大幅提前，原10级）
+    if (playerLevel < 20) return 3;     // 10-19级生成3个（大幅提前，原16级）
+    if (playerLevel < 30) return 4;     // 20-29级生成4个
+    // 30级之后每8级增加1个
     const additional = Math.floor((playerLevel - 30) / 8);
-    return Math.min(4 + additional, 6); // 上限降低到6个
+    return Math.min(5 + additional, 8); // 上限提升到8个
   }
 
   private selectEnemyType(playerLevel: number): EnemyType {
@@ -172,7 +172,7 @@ export class EnemyManager {
     playerY: number = 0
   ): Enemy {
     const typeConfig = GAME_CONFIG.ENEMY.TYPES[type];
-    
+
     // 基于时间的属性增长（使用配置项，降低增长速度）
     const timeMultiplier = 1 + survivalTime * GAME_CONFIG.ENEMY.HEALTH_GROWTH_PER_SECOND;
     const globalHealthMultiplier = GAME_CONFIG.ENEMY.GLOBAL_HEALTH_MULTIPLIER ?? 1.0;
@@ -269,7 +269,7 @@ export class EnemyManager {
         const shootRange = GAME_CONFIG.ENEMY.TYPES.shooter.shootRange || 250;
         const shootRangeSq = shootRange * shootRange;
         const innerRangeSq = (shootRange - 50) * (shootRange - 50);
-        
+
         if (distanceSq > shootRangeSq) {
           // 靠近玩家
           moveX = Math.cos(enemy.angle) * enemy.speed;
@@ -299,12 +299,12 @@ export class EnemyManager {
 
       if (checkObstacle) {
         const blocked = checkObstacle(nextX, nextY, enemy.radius);
-        
+
         if (blocked) {
           // 尝试分轴移动
           const xBlocked = checkObstacle(nextX, enemy.y, enemy.radius);
           const yBlocked = checkObstacle(enemy.x, nextY, enemy.radius);
-          
+
           if (xBlocked && !yBlocked) {
             // X轴被挡，只走Y轴
             nextX = enemy.x;
@@ -315,13 +315,13 @@ export class EnemyManager {
             // 两轴都被挡，尝试绕行（沿垂直方向偏移）
             const perpX = -moveY; // 垂直方向
             const perpY = moveX;
-            
+
             // 尝试向左或向右绕行
             const slideX1 = enemy.x + perpX * 0.8;
             const slideY1 = enemy.y + perpY * 0.8;
             const slideX2 = enemy.x - perpX * 0.8;
             const slideY2 = enemy.y - perpY * 0.8;
-            
+
             if (!checkObstacle(slideX1, slideY1, enemy.radius)) {
               nextX = slideX1;
               nextY = slideY1;

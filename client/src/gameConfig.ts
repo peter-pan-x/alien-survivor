@@ -43,11 +43,11 @@ export const GAME_CONFIG = {
     BASE_SPEED: 0.95, // 提升基础速度（从0.6升至0.95），8级前敌人更具挑战性
     SPEED_INCREMENT_PER_20_KILLS: 0.15,
     MAX_SPEED: 2.5,
-    INITIAL_SPAWN_INTERVAL: 1500,
-    MIN_SPAWN_INTERVAL: 600,
+    INITIAL_SPAWN_INTERVAL: 1000, // 加快初始刷新（从1500降至1000）
+    MIN_SPAWN_INTERVAL: 300, // 允许更快的极限刷新（从600降至300）
     SPAWN_INTERVAL_DECREASE_PER_10_KILLS: 60,
-    // 新增：按等级缩短刷新间隔的乘数（越小越快），调整为更慢的0.88
-    SPAWN_INTERVAL_PER_LEVEL_MULTIPLIER: 0.88,
+    // 新增：按等级缩短刷新间隔的乘数（越小越快），调整为0.95
+    SPAWN_INTERVAL_PER_LEVEL_MULTIPLIER: 0.95,
     DAMAGE_TO_PLAYER: 5,
     // 下调：全局敌人血量乘数，从1.3降至1.1，柔化基础强度
     GLOBAL_HEALTH_MULTIPLIER: 1.1,
@@ -147,7 +147,7 @@ export const GAME_CONFIG = {
     SCORE_PER_BOSS_KILL: 1000, // Boss击败奖励分数
     // 新增：升级需求规则
     BASE_KILLS_FOR_FIRST_LEVEL: 4, // 首次升级需要击杀4个敌人（从5降到4，减少20%）
-    GROWTH_RATE: 1.20, // 之后每级在上一级基础上增加20%（从1.25降到1.20）
+    GROWTH_RATE: 1.32, // 之后每级在上一级基础上增加32%（从1.20提升到1.32，增加10%）
     BOSS_EXP_REWARD_MULTIPLIER: 50, // Boss 经验奖励倍率（集中管理）
   },
 
