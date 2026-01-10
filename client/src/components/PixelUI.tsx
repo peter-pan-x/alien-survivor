@@ -6,6 +6,10 @@
 import { GameStats, GameState } from "../gameTypes";
 import { GAME_CONFIG } from "../gameConfig";
 import type { SkillEffect } from "../systems/SkillSystem";
+import type { DailyChallenge } from "../systems/DailyChallengeSystem";
+import { AchievementsPanel } from "./AchievementsPanel";
+import type { Achievement, AchievementProgress } from "../systems/AchievementSystem";
+import { useState } from "react";
 
 interface PixelUIProps {
   gameState: GameState;
@@ -17,12 +21,17 @@ interface PixelUIProps {
     maxShield: number;
     level: number;
     exp: number;
+    lives: number; // 新增
+    maxLives: number; // 新增
   };
   skillOptions: SkillEffect[];
   isNewRecord: boolean;
   onStartGame: () => void;
   onSelectSkill: (skill: SkillEffect) => void;
   onRestart: () => void;
+  dailyChallenge: DailyChallenge | null; // 新增：每日挑战信息
+  achievements?: Achievement[]; // 新增：成就列表
+  achievementProgress?: Map<string, AchievementProgress>; // 新增：成就进度
 }
 
 /**
@@ -175,13 +184,22 @@ function PixelButton({
 function PixelMainMenu({
   stats,
   onStartGame,
+  dailyChallenge,
+  achievements,
+  achievementProgress,
 }: {
   stats: GameStats;
   onStartGame: () => void;
+  dailyChallenge: DailyChallenge | null;
+  achievements?: Achievement[];
+  achievementProgress?: Map<string, AchievementProgress>;
 }) {
   // 检测移动端
   const isMobile = window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  
+
+  // 成就面板状态
+  const [showAchievements, setShowAchievements] = useState(false);
+
   // 全屏切换（兼容各种浏览器）
   const toggleFullscreen = async () => {
     const doc = document as any;
@@ -275,10 +293,91 @@ function PixelMainMenu({
         </div>
       )}
 
+      {/* 每日挑战卡片（新增） */}
+      {dailyChallenge && (
+        <div
+          className="pixel-panel"
+          style={{
+            textAlign: 'center',
+            minWidth: isMobile ? '280px' : '400px',
+            padding: isMobile ? '12px' : '16px',
+            border: '2px solid #fbbf24',
+            background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.1) 100%)',
+          }}
+        >
+          {/* 挑战标题 */}
+          <div className="pixel-label" style={{ marginBottom: '8px', fontSize: isMobile ? '12px' : '14px', color: '#fbbf24' }}>
+            ⚡ 今日挑战
+          </div>
+
+          {/* 挑战名称 */}
+          <div
+            className="pixel-text"
+            style={{
+              fontSize: isMobile ? '16px' : '20px',
+              color: '#fcd34d',
+              marginBottom: '8px',
+              fontWeight: 'bold'
+            }}
+          >
+            {dailyChallenge.name}
+          </div>
+
+          {/* 挑战描述 */}
+          <div className="pixel-text" style={{ fontSize: isMobile ? '11px' : '13px', marginBottom: '12px', lineHeight: '1.4' }}>
+            {dailyChallenge.description}
+          </div>
+
+          {/* 挑战修正列表 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
+            {dailyChallenge.modifiers.map((modifier, index) => (
+              <div
+                key={index}
+                className="pixel-text"
+                style={{
+                  fontSize: isMobile ? '10px' : '12px',
+                  color: '#a0aec0',
+                  padding: '4px 8px',
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  borderRadius: '4px',
+                }}
+              >
+                • {modifier.description}
+              </div>
+            ))}
+          </div>
+
+          {/* 奖励倍数 */}
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', fontSize: isMobile ? '11px' : '13px' }}>
+            {dailyChallenge.rewards.scoreMultiplier !== 1.0 && (
+              <div className="pixel-text" style={{ color: '#68d391' }}>
+                分数 ×{dailyChallenge.rewards.scoreMultiplier.toFixed(1)}
+              </div>
+            )}
+            {dailyChallenge.rewards.expMultiplier !== 1.0 && (
+              <div className="pixel-text" style={{ color: '#63b3ed' }}>
+                经验 ×{dailyChallenge.rewards.expMultiplier.toFixed(1)}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 开始按钮 */}
       <PixelButton onClick={onStartGame} size={isMobile ? 'normal' : 'large'} variant="primary">
         ▶ START GAME
       </PixelButton>
+
+      {/* 成就按钮（新增） */}
+      {achievements && achievementProgress && (
+        <PixelButton
+          onClick={() => setShowAchievements(true)}
+          size={isMobile ? 'normal' : 'large'}
+          variant="secondary"
+        >
+          🏆 ACHIEVEMENTS
+        </PixelButton>
+      )}
 
       {/* 说明 - 移动端简化 */}
       <div className="pixel-panel" style={{ maxWidth: isMobile ? '280px' : '400px', textAlign: 'center', padding: isMobile ? '12px' : '16px' }}>
@@ -314,6 +413,15 @@ function PixelMainMenu({
       >
         AGI-彼得潘
       </div>
+
+      {/* 成就面��（新增） */}
+      {showAchievements && achievements && achievementProgress && (
+        <AchievementsPanel
+          achievements={achievements}
+          progress={achievementProgress}
+          onClose={() => setShowAchievements(false)}
+        />
+      )}
     </div>
   );
 }
@@ -573,7 +681,16 @@ function PixelHUD({
   player,
   stats,
 }: {
-  player: { health: number; maxHealth: number; shield: number; maxShield: number; level: number; exp: number };
+  player: {
+    health: number;
+    maxHealth: number;
+    shield: number;
+    maxShield: number;
+    level: number;
+    exp: number;
+    lives: number; // 新增
+    maxLives: number; // 新增
+  };
   stats: GameStats;
 }) {
   const baseKills = GAME_CONFIG.LEVELING.BASE_KILLS_FOR_FIRST_LEVEL ?? 5;
@@ -598,7 +715,41 @@ function PixelHUD({
         }}
       >
         {/* 左侧：生命值与护盾 */}
-        <div style={{ width: '250px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ width: '280px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {/* 生命爱心（新增） */}
+          <div
+            className="pixel-panel"
+            style={{
+              padding: '8px 12px',
+              background: 'rgba(0,0,0,0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <span
+              className="pixel-label"
+              style={{
+                fontSize: '18px',
+                marginRight: '4px',
+              }}
+            >
+              ❤️
+            </span>
+            {Array.from({ length: player.maxLives }).map((_, index) => (
+              <span
+                key={index}
+                style={{
+                  fontSize: '24px',
+                  filter: index < player.lives ? 'none' : 'grayscale(100%) opacity(0.3)',
+                  transition: 'all 0.3s ease',
+                }}
+              >
+                ❤️
+              </span>
+            ))}
+          </div>
+
           <div className="pixel-panel" style={{ padding: '8px', background: 'rgba(0,0,0,0.6)' }}>
             <PixelProgressBar
               value={player.health}
@@ -698,6 +849,9 @@ export function PixelUI({
   onStartGame,
   onSelectSkill,
   onRestart,
+  dailyChallenge,
+  achievements,
+  achievementProgress,
 }: PixelUIProps) {
   // 游戏内HUD
   if (gameState === 'playing' || gameState === 'paused') {
@@ -706,7 +860,15 @@ export function PixelUI({
 
   // 主菜单
   if (gameState === 'menu') {
-    return <PixelMainMenu stats={stats} onStartGame={onStartGame} />;
+    return (
+      <PixelMainMenu
+        stats={stats}
+        onStartGame={onStartGame}
+        dailyChallenge={dailyChallenge}
+        achievements={achievements}
+        achievementProgress={achievementProgress}
+      />
+    );
   }
 
   // 升级界面

@@ -6,6 +6,8 @@ import { VirtualJoystick } from "../utils/VirtualJoystick";
 import { GameEngine } from "../core/GameEngine";
 import { PixelUI } from "../components/PixelUI";
 import type { SkillEffect } from "../systems/SkillSystem";
+import type { DailyChallenge } from "../systems/DailyChallengeSystem";
+import type { Achievement, AchievementProgress } from "../systems/AchievementSystem";
 import { DeviceUtils } from "../utils/DeviceUtils";
 import "../styles/pixel.css";
 
@@ -34,6 +36,9 @@ export default function Game() {
   });
   const [skillOptions, setSkillOptions] = useState<SkillEffect[]>([]);
   const [isNewRecord, setIsNewRecord] = useState(false);
+  const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge | null>(null); // 新增：每日挑战状态
+  const [achievements, setAchievements] = useState<Achievement[]>([]); // 新增：成就列表
+  const [achievementProgress, setAchievementProgress] = useState<Map<string, AchievementProgress>>(new Map()); // 新增：成就进度
 
   // 加载最高分
   useEffect(() => {
@@ -89,6 +94,16 @@ export default function Game() {
       });
 
       gameEngineRef.current = engine;
+
+      // 获取每日挑战信息（新增）
+      const challengeSystem = engine.getDailyChallengeSystem();
+      challengeSystem.generateTodaysChallenge();
+      setDailyChallenge(challengeSystem.getCurrentChallenge());
+
+      // 获取成就系统信息（新增）
+      const achievementSystem = engine.getAchievementSystem();
+      setAchievements(achievementSystem.getAllAchievements());
+      setAchievementProgress(achievementSystem.getAllProgress());
 
       // 将虚拟摇杆传递给引擎（用于渲染）
       if (virtualJoystickRef.current) {
@@ -291,6 +306,8 @@ export default function Game() {
         maxShield: 0,
         level: 1,
         exp: 0,
+        lives: 3, // 新增：默认3条命
+        maxLives: 3, // 新增：最大3条命
       };
     }
     return {
@@ -300,6 +317,8 @@ export default function Game() {
       maxShield: player.maxShield,
       level: player.level,
       exp: player.exp,
+      lives: player.lives, // 新增
+      maxLives: player.maxLives, // 新增
     };
   }, [gameState, stats]); // 只在游戏状态或统计数据变化时更新
 
@@ -326,6 +345,9 @@ export default function Game() {
         onStartGame={initGame}
         onSelectSkill={selectSkill}
         onRestart={initGame}
+        dailyChallenge={dailyChallenge}
+        achievements={achievements}
+        achievementProgress={achievementProgress}
       />
       
       {/* 旧UI（暂时保留作为后备） */}

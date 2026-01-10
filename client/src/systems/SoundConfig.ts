@@ -3,7 +3,7 @@
  * 集中管理所有音效的参数配置，便于调整和优化
  */
 
-export type SoundType = "shoot" | "hit" | "kill" | "levelup" | "damage" | "pickup" | "gameover";
+export type SoundType = "shoot" | "hit" | "kill" | "levelup" | "damage" | "pickup" | "gameover" | "life_lost";
 
 export interface SoundEffectConfig {
   frequency: number;
@@ -66,6 +66,13 @@ export const SOUND_CONFIGS: Record<SoundType, SoundEffectConfig> = {
     duration: 1.0,
     volume: 0.5,
     description: "游戏结束音效 - 长低音",
+  },
+  life_lost: {
+    frequency: 120,
+    waveType: "triangle",
+    duration: 0.6,
+    volume: 0.7,
+    description: "失去生命音效 - 警告音",
   },
 };
 

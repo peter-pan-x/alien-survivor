@@ -20,6 +20,8 @@ import { TreeSystem } from "../systems/TreeSystem";
 import { EnemyIdGenerator } from "../utils/EnemyIdGenerator";
 import { ExpOrbSystem, EXP_ORB_CONFIG } from "../systems/ExpOrbSystem";
 import { VirtualJoystick } from "../utils/VirtualJoystick";
+import { DailyChallengeSystem } from "../systems/DailyChallengeSystem";
+import { AchievementSystem, SessionData } from "../systems/AchievementSystem";
 
 /**
  * 游戏引擎核心类
@@ -55,6 +57,9 @@ export class GameEngine {
   private treeSystem: TreeSystem; // 树木系统
   private enemyIdGenerator: EnemyIdGenerator; // 敌人ID生成器
   private expOrbSystem: ExpOrbSystem; // 经验球系统
+  private dailyChallengeSystem: DailyChallengeSystem; // 每日挑战系统（新增）
+  private achievementSystem: AchievementSystem; // 成就系统（新增）
+  private sessionData: SessionData; // 会话数据（新增）
 
   // 游戏状态
   private gameStartTime: number = 0;
@@ -62,6 +67,8 @@ export class GameEngine {
   private lastDamageTime: number = 0;
   private lastTreeUpdateTime: number = 0; // 树木更新时间戳
   private shotToggle: boolean = false; // 双弹道左右交替偏移
+  private isInvincible: boolean = false; // 新增：是否处于无敌状态
+  private invincibleEndTime: number = 0; // 新增：无敌结束时间
   private stats: GameStats = {
     score: 0,
     killCount: 0,
@@ -119,6 +126,9 @@ export class GameEngine {
     this.treeSystem = new TreeSystem(); // 树木系统
     this.enemyIdGenerator = new EnemyIdGenerator(); // 敌人ID生成器
     this.expOrbSystem = new ExpOrbSystem(); // 经验球系统
+    this.dailyChallengeSystem = new DailyChallengeSystem(); // 每日挑战系统（新增）
+    this.achievementSystem = new AchievementSystem(); // 成就系统（新增）
+    this.sessionData = this.achievementSystem.createSessionData(); // 会话数据（新增）
 
     // 初始化技能系统（独立模块）
     this.skillSystem = new SkillSystem();
@@ -294,6 +304,14 @@ export class GameEngine {
     this.expOrbSystem.reset();
     // 停止背景音乐（重置时）
     this.audioSystem.stopBackgroundMusic();
+    // 重置并生成今日挑战（新增）
+    this.dailyChallengeSystem.reset();
+    this.dailyChallengeSystem.generateTodaysChallenge();
+    // 重置会话���据（新增）
+    this.sessionData = this.achievementSystem.createSessionData();
+    // 重置无敌状态（新增）
+    this.isInvincible = false;
+    this.invincibleEndTime = 0;
   }
 
   /**
@@ -375,6 +393,11 @@ export class GameEngine {
         this.player.level++;
         leveledUp = true;
 
+        // 检查满血升级（新增）
+        if (this.player.health >= this.player.maxHealth * 0.95) {
+          this.sessionData.perfectLevels++;
+        }
+
         if (import.meta.env.DEV) {
           console.log(`[GameEngine] Level up! Now level ${this.player.level}`);
         }
@@ -435,6 +458,27 @@ export class GameEngine {
    */
   public getAudioSystem(): AudioSystem {
     return this.audioSystem;
+  }
+
+  /**
+   * 获取每日挑战系统（新增）
+   */
+  public getDailyChallengeSystem(): DailyChallengeSystem {
+    return this.dailyChallengeSystem;
+  }
+
+  /**
+   * 获取成就系统（新增）
+   */
+  public getAchievementSystem(): AchievementSystem {
+    return this.achievementSystem;
+  }
+
+  /**
+   * 获取会话数据（新增）
+   */
+  public getSessionData(): Readonly<SessionData> {
+    return this.sessionData;
   }
 
   /**
@@ -665,6 +709,18 @@ export class GameEngine {
         this.stop();
         // 播放游戏结束音效
         this.audioSystem.playSound("gameover");
+
+        // 检查成就（新增：游戏结束时检查）
+        const newlyUnlocked = this.achievementSystem.checkAchievements(
+          this.stats,
+          this.player,
+          this.sessionData
+        );
+
+        if (newlyUnlocked.length > 0) {
+          console.log(`[Achievement] 新解锁 ${newlyUnlocked.length} 个成就！`);
+        }
+
         if (this.onGameOver) {
           this.onGameOver();
         }
@@ -1200,10 +1256,15 @@ export class GameEngine {
               GAME_CONFIG.PARTICLE.DEATH_PARTICLE_COUNT * 3
             );
             this.stats.killCount++;
-            this.stats.score += GAME_CONFIG.LEVELING.SCORE_PER_BOSS_KILL;
+            // 应用每日挑战的分数倍数修正（新增）
+            const baseScore = GAME_CONFIG.LEVELING.SCORE_PER_BOSS_KILL;
+            const challengeScoreMultiplier = this.dailyChallengeSystem.getScoreMultiplier();
+            this.stats.score += Math.ceil(baseScore * challengeScoreMultiplier);
             // Boss死亡生成大量经验球
+            // 应用每日挑战的经验倍数修正（新增）
+            const challengeExpMultiplier = this.dailyChallengeSystem.getExpMultiplier();
             const bossExpTotal = GAME_CONFIG.LEVELING.EXP_PER_KILL *
-              (GAME_CONFIG.LEVELING.BOSS_EXP_REWARD_MULTIPLIER ?? 50);
+              (GAME_CONFIG.LEVELING.BOSS_EXP_REWARD_MULTIPLIER ?? 50) * challengeExpMultiplier;
             // 分成多个经验球散落
             const orbCount = 10;
             for (let j = 0; j < orbCount; j++) {
@@ -1283,7 +1344,12 @@ export class GameEngine {
         }
 
         this.stats.killCount++;
-        this.stats.score += 10;
+        // 增加无伤击杀计数（新增）
+        this.sessionData.killsWithoutTakingDamage++;
+        // 应用每日挑战的分数倍数修正（新增）
+        const baseScore = 10;
+        const challengeScoreMultiplier = this.dailyChallengeSystem.getScoreMultiplier();
+        this.stats.score += Math.ceil(baseScore * challengeScoreMultiplier);
 
         // 播放击杀音效
         this.audioSystem.playSound("kill");
@@ -1297,7 +1363,11 @@ export class GameEngine {
         }
 
         // 生成经验球（不再直接给经验）
-        this.expOrbSystem.spawnOrb(enemy.x, enemy.y, GAME_CONFIG.LEVELING.EXP_PER_KILL);
+        // 应用每日挑战的经验倍数修正（新增）
+        const baseExp = GAME_CONFIG.LEVELING.EXP_PER_KILL;
+        const challengeExpMultiplier = this.dailyChallengeSystem.getExpMultiplier();
+        const finalExp = Math.ceil(baseExp * challengeExpMultiplier);
+        this.expOrbSystem.spawnOrb(enemy.x, enemy.y, finalExp);
 
         enemies.splice(i, 1);
       }
@@ -1412,8 +1482,16 @@ export class GameEngine {
 
   /**
    * 应用伤害到玩家（修复：正确处理护盾溢出）
+   * 新增：生命系统、闪烁无敌、音效
    */
   private applyDamage(damage: number): void {
+    // 检查是否处于无敌状态
+    const now = Date.now();
+    if (this.isInvincible && now < this.invincibleEndTime) {
+      return; // 无敌期间不受伤
+    }
+
+    // 应用护盾和伤害
     if (this.player.shield > 0) {
       this.player.shield -= damage;
       if (this.player.shield < 0) {
@@ -1429,8 +1507,40 @@ export class GameEngine {
     // 确保生命值在有效范围内
     this.player.health = MathUtils.clamp(this.player.health, 0, this.player.maxHealth);
 
-    // 播放受伤音效
-    this.audioSystem.playSound("damage");
+    // 检查是否失去生命（生命值归零）
+    if (this.player.health <= 0) {
+      if (this.player.lives > 1) {
+        // 失去一条生命
+        this.player.lives--;
+        this.player.health = this.player.maxHealth; // 恢复生命值
+        this.player.shield = this.player.maxShield; // 恢复护盾
+
+        // 触发3秒无敌状态
+        this.isInvincible = true;
+        this.invincibleEndTime = now + 3000; // 3秒后结束无敌
+
+        // 播放失去生命音效
+        this.audioSystem.playSound("life_lost"); // 新增音效
+
+        // 粒子特效：更华丽的死亡粒子
+        this.particlePool.createParticles(
+          this.player.x,
+          this.player.y,
+          GAME_CONFIG.COLORS.PARTICLE_PLAYER_HIT,
+          GAME_CONFIG.PARTICLE.DEATH_PARTICLE_COUNT
+        );
+      } else {
+        // 最后一条命，游戏结束
+        this.player.lives = 0;
+        this.player.health = 0;
+      }
+    } else {
+      // 普通受伤，播放受伤音效
+      this.audioSystem.playSound("damage");
+    }
+
+    // 重置无伤击杀计数
+    this.sessionData.killsWithoutTakingDamage = 0;
   }
 
   /**
@@ -1990,6 +2100,16 @@ export class GameEngine {
    */
   private renderPlayer(): void {
     this.ctx.save();
+
+    // 检查是否处于无敌状态（新增：闪烁效果）
+    const now = Date.now();
+    if (this.isInvincible && now < this.invincibleEndTime) {
+      // 快速闪烁：每100ms切换一次可见性
+      const blinkPhase = Math.floor(now / 100) % 2;
+      if (blinkPhase === 0) {
+        this.ctx.globalAlpha = 0.3; // 半透明
+      }
+    }
 
     // 绘制玩家像素精灵
     this.pixelRenderer.drawSprite(
