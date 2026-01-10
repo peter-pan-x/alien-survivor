@@ -22,6 +22,7 @@ import { ExpOrbSystem, EXP_ORB_CONFIG } from "../systems/ExpOrbSystem";
 import { VirtualJoystick } from "../utils/VirtualJoystick";
 import { DailyChallengeSystem } from "../systems/DailyChallengeSystem";
 import { AchievementSystem, SessionData } from "../systems/AchievementSystem";
+import { animationSystem } from "../systems/AnimationSystem";
 
 /**
  * 游戏引擎核心类
@@ -60,6 +61,7 @@ export class GameEngine {
   private dailyChallengeSystem: DailyChallengeSystem; // 每日挑战系统（新增）
   private achievementSystem: AchievementSystem; // 成就系统（新增）
   private sessionData: SessionData; // 会话数据（新增）
+  private animSystem = animationSystem; // 动画系统（新增 - 让角色活起来）
 
   // 游戏状态
   private gameStartTime: number = 0;
@@ -563,6 +565,9 @@ export class GameEngine {
    * 更新游戏状态
    */
   private update(now: number, deltaTime: number): void {
+    // 更新动画系统（新增 - 让所有角色动起来）
+    this.animSystem.update(deltaTime);
+
     // 更新存活时间
     const survivalTime = Math.floor((now - this.gameStartTime) / 1000);
     this.stats.survivalTime = survivalTime;
@@ -1832,13 +1837,36 @@ export class GameEngine {
   }
 
   /**
-   * 渲染敌人 - 像素风格
+   * 渲染敌人 - 像素风格 + 动画效果（新增：呼吸、摇摆、弹跳、旋转）
    */
   private renderEnemies(): void {
     const enemies = this.enemyManager.getEnemies();
-    
+
     for (const enemy of enemies) {
       this.ctx.save();
+
+      // ==================== 新增：敌人动画 ====================
+
+      // 1. 呼吸动画 - 不同类型有不同节奏
+      const breathingScale = this.animSystem.getEnemyBreathingScale(enemy.type);
+
+      // 2. 移动摇摆动画 - 不同类型有不同摇摆方式
+      const swayAngle = this.animSystem.getEnemyWalkSway(enemy.type, enemy.speed / 100);
+
+      // 3. 身体弹跳动画 - 青蛙、蜘蛛等更明显
+      const bounceY = this.animSystem.getEnemyBodyBounce(enemy.type);
+
+      // 4. 旋转动画 - 某些敌人会旋转
+      const rotation = this.animSystem.getEnemyRotation(enemy.type);
+
+      // 计算最终绘制位置
+      const drawX = enemy.x;
+      const drawY = enemy.y + bounceY;
+
+      // 应用变换矩阵
+      this.ctx.translate(drawX, drawY);
+      this.ctx.rotate(swayAngle + rotation);
+      this.ctx.scale(breathingScale, breathingScale);
 
       // 根据敌人类型选择精灵和颜色
       let sprite: string[] = [];
@@ -1883,7 +1911,10 @@ export class GameEngine {
       }
 
       // 绘制像素精灵
-      this.pixelRenderer.drawSprite(enemy.x, enemy.y, sprite, colors);
+      this.pixelRenderer.drawSprite(0, 0, sprite, colors);
+
+      // 恢复变换矩阵
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0); // 重置为单位矩阵
 
       // 冰冻特效：蓝色染色 + 飘落雪花（范围与敌人大小一致）
       if (enemy.frozenUntil && Date.now() < enemy.frozenUntil) {
@@ -1973,9 +2004,39 @@ export class GameEngine {
     const pixelSize = 4;
     const align = (v: number) => Math.floor(v / pixelSize) * pixelSize;
 
-    // 跳跃时的缩放效果
+    // ==================== 新增：Boss动画 ====================
+
+    // 1. 深沉的呼吸动画 - 缓慢的缩放效果
+    const breathingScale = this.animSystem.getBossBreathingScale();
+
+    // 2. 跳跃时的缩放效果（原有）
     const jumpScale = boss.isJumping ? 0.7 : 1;
-    const drawR = r * jumpScale;
+
+    // 3. 攻击前摇 - 蓄力时的颤抖（基于跳跃状态判断）
+    const isPreparing = boss.isJumping;
+    const attackShake = this.animSystem.getBossAttackShake(isPreparing);
+
+    // 4. 攻击冲击 - 攻击时的前冲（基于跳跃状态判断）
+    const isAttacking = boss.isJumping;
+    const attackLunge = this.animSystem.getBossAttackLunge(isAttacking);
+
+    // 5. 愤怒模式 - 红色闪烁（基于血量比例判断）
+    const healthPercent = boss.health / boss.maxHealth;
+    const isEnraged = healthPercent < 0.3; // 血量低于30%时愤怒
+    const enragedFlash = this.animSystem.getBossEnragedFlash(isEnraged);
+
+    // 组合所有缩放效果
+    const totalScale = breathingScale * jumpScale * (1 + attackShake);
+    const drawR = r * totalScale;
+
+    // 应用Boss位置的动画偏移
+    const drawX = boss.x + attackLunge;
+    const drawY = boss.y;
+
+    // 移动到Boss位置并应用缩放
+    this.ctx.translate(drawX, drawY);
+    this.ctx.scale(totalScale, totalScale);
+    this.ctx.translate(-drawX, -drawY); // 保持原点
 
     // 1. 阴影
     this.ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
@@ -2033,6 +2094,15 @@ export class GameEngine {
     this.ctx.fillStyle = lightColor;
     this.ctx.fillRect(align(boss.x - drawR * 0.4), align(boss.y - drawR * 0.6), pixelSize * 2, pixelSize);
     this.ctx.fillRect(align(boss.x - drawR * 0.5), align(boss.y - drawR * 0.4), pixelSize, pixelSize * 2);
+
+    // 愤怒模式红色闪烁（新增）
+    if (enragedFlash > 0) {
+      this.ctx.fillStyle = `rgba(255, 0, 0, ${enragedFlash})`;
+      this.ctx.fillRect(align(boss.x - drawR), align(boss.y - drawR), drawR * 2, drawR * 2);
+    }
+
+    // 恢复变换矩阵（在血条渲染之前）
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     // 6. Boss血条
     const barWidth = r * 3;
@@ -2096,12 +2166,12 @@ export class GameEngine {
   }
 
   /**
-   * 渲染玩家 - 像素风格
+   * 渲染玩家 - 像素风格 + 动画效果（新增：呼吸、摇摆、跳动）
    */
   private renderPlayer(): void {
     this.ctx.save();
 
-    // 检查是否处于无敌状态（新增：闪烁效果）
+    // 检查是否处于无敌状态（新增：��烁效果）
     const now = Date.now();
     if (this.isInvincible && now < this.invincibleEndTime) {
       // 快速闪烁：每100ms切换一次可见性
@@ -2111,20 +2181,54 @@ export class GameEngine {
       }
     }
 
+    // ==================== 新增：玩家动画 ====================
+
+    // 1. 呼吸动画 - 缓慢的缩放效果
+    const breathingScale = this.animSystem.getPlayerBreathingScale();
+
+    // 2. 检测玩家是否在移动
+    const isMoving = this.joystickInput.x !== 0 || this.joystickInput.y !== 0 ||
+                    this.keys.has("w") || this.keys.has("s") ||
+                    this.keys.has("a") || this.keys.has("d");
+
+    // 3. 移动摇摆动画 - 左右轻微倾斜
+    const swayAngle = isMoving ? this.animSystem.getPlayerWalkSway(this.player.moveSpeed / 100) : 0;
+
+    // 4. 上下颠簸动画 - 模拟走路时的起伏
+    const bounceY = isMoving ? this.animSystem.getPlayerWalkBounce() : 0;
+
+    // 5. 射击后坐力动画
+    const timeSinceLastShot = now - this.lastShotTime;
+    const hasRecoil = timeSinceLastShot < 100; // 射击后100ms内有后坐力
+    const recoil = hasRecoil ? this.animSystem.getPlayerShootRecoil() : { x: 0, y: 0 };
+
+    // 应用变换到玩家位置
+    const drawX = this.player.x + recoil.x;
+    const drawY = this.player.y + recoil.y + bounceY;
+
+    // 移动到玩家位置并应用变换
+    this.ctx.translate(drawX, drawY);
+    this.ctx.rotate(swayAngle);
+    this.ctx.scale(breathingScale, breathingScale);
+
     // 绘制玩家像素精灵
     this.pixelRenderer.drawSprite(
-      this.player.x,
-      this.player.y,
+      0,
+      0,
       PixelSprites.player,
       PixelColors.player
     );
 
-    // 护盾效果 - 像素风格圆形边框
+    // 恢复变换矩阵
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0); // 重置为单位矩阵
+
+    // 护盾效果 - 像素风格圆形边框（带呼吸动画）
     if (this.player.shield > 0) {
+      const shieldPulse = this.animSystem.getParticlePulse(1, 2); // 护盾脉冲动画
       this.pixelRenderer.drawPixelCircle(
         this.player.x,
         this.player.y,
-        this.player.radius + GAME_CONFIG.RENDERING.SHIELD_RADIUS_OFFSET,
+        (this.player.radius + GAME_CONFIG.RENDERING.SHIELD_RADIUS_OFFSET) * shieldPulse,
         "transparent",
         GAME_CONFIG.COLORS.SHIELD
       );
