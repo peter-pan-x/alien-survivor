@@ -23,6 +23,7 @@ import { VirtualJoystick } from "../utils/VirtualJoystick";
 import { DailyChallengeSystem } from "../systems/DailyChallengeSystem";
 import { AchievementSystem, SessionData } from "../systems/AchievementSystem";
 import { animationSystem } from "../systems/AnimationSystem";
+import { animatedSpriteRenderer } from "../systems/AnimatedSpriteRenderer";
 
 /**
  * 游戏引擎核心类
@@ -1837,7 +1838,7 @@ export class GameEngine {
   }
 
   /**
-   * 渲染敌人 - 像素风格 + 动画效果（新增：呼吸、摇摆、弹跳、旋转）
+   * 渲染敌人 - 像素风格 + 真正的肢体动画（新增：手脚摆动、眼睛转动、身体起伏）
    */
   private renderEnemies(): void {
     const enemies = this.enemyManager.getEnemies();
@@ -1845,76 +1846,25 @@ export class GameEngine {
     for (const enemy of enemies) {
       this.ctx.save();
 
-      // ==================== 新增：敌人动画 ====================
+      // ==================== 新增：真正的肢体动画 ====================
 
-      // 1. 呼吸动画 - 不同类型有不同节奏
-      const breathingScale = this.animSystem.getEnemyBreathingScale(enemy.type);
+      // 使用新的动画精灵渲染器 - 让敌人的手脚真正动起来
+      const animTime = this.animSystem.getTime();
 
-      // 2. 移动摇摆动画 - 不同类型有不同摇摆方式
-      const swayAngle = this.animSystem.getEnemyWalkSway(enemy.type, enemy.speed / 100);
-
-      // 3. 身体弹跳动画 - 青蛙、蜘蛛等更明显
-      const bounceY = this.animSystem.getEnemyBodyBounce(enemy.type);
-
-      // 4. 旋转动画 - 某些敌人会旋转
-      const rotation = this.animSystem.getEnemyRotation(enemy.type);
-
-      // 计算最终绘制位置
+      // 仅应用轻微的身体起伏（不旋转）
+      const bodyBounce = this.animSystem.getEnemyBodyBounce(enemy.type);
       const drawX = enemy.x;
-      const drawY = enemy.y + bounceY;
+      const drawY = enemy.y + bodyBounce * 0.5; // 减小上下移动幅度
 
-      // 应用变换矩阵
-      this.ctx.translate(drawX, drawY);
-      this.ctx.rotate(swayAngle + rotation);
-      this.ctx.scale(breathingScale, breathingScale);
-
-      // 根据敌人类型选择精灵和颜色
-      let sprite: string[] = [];
-      let colors: Record<string, string> = {};
-
-      switch (enemy.type) {
-        case "swarm":
-          sprite = PixelSprites.enemySwarm;
-          colors = PixelColors.enemySwarm;
-          break;
-        case "rusher":
-          sprite = PixelSprites.enemyRusher;
-          colors = PixelColors.enemyRusher;
-          break;
-        case "shooter":
-          sprite = PixelSprites.enemyShooter;
-          colors = PixelColors.enemyShooter;
-          break;
-        case "elite":
-          sprite = PixelSprites.enemyElite;
-          colors = PixelColors.enemyElite;
-          break;
-        case "spider":
-          sprite = PixelSprites.enemySpider;
-          colors = PixelColors.enemySpider;
-          break;
-        case "crab":
-          sprite = PixelSprites.enemyCrab;
-          colors = PixelColors.enemyCrab;
-          break;
-        case "bigeye":
-          sprite = PixelSprites.enemyBigEye;
-          colors = PixelColors.enemyBigEye;
-          break;
-        case "frog":
-          sprite = PixelSprites.enemyFrog;
-          colors = PixelColors.enemyFrog;
-          break;
-        default:
-          sprite = PixelSprites.enemySwarm;
-          colors = PixelColors.enemySwarm;
-      }
-
-      // 绘制像素精灵
-      this.pixelRenderer.drawSprite(0, 0, sprite, colors);
-
-      // 恢复变换矩阵
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0); // 重置为单位矩阵
+      // 渲染带动画的敌人精灵（手脚会动）
+      animatedSpriteRenderer.renderAnimatedEnemy(
+        this.ctx,
+        drawX,
+        drawY,
+        enemy.type,
+        animTime,
+        4 // 像素大小
+      );
 
       // 冰冻特效：蓝色染色 + 飘落雪花（范围与敌人大小一致）
       if (enemy.frozenUntil && Date.now() < enemy.frozenUntil) {
@@ -2166,12 +2116,12 @@ export class GameEngine {
   }
 
   /**
-   * 渲染玩家 - 像素风格 + 动画效果（新增：呼吸、摇摆、跳动）
+   * 渲染玩家 - 像素风格 + 真正的肢体动画（新增：手臂摆动、呼吸起伏）
    */
   private renderPlayer(): void {
     this.ctx.save();
 
-    // 检查是否处于无敌状态（新增：��烁效果）
+    // 检查是否处于无敌状态（新增：闪烁效果）
     const now = Date.now();
     if (this.isInvincible && now < this.invincibleEndTime) {
       // 快速闪烁：每100ms切换一次可见性
@@ -2181,7 +2131,7 @@ export class GameEngine {
       }
     }
 
-    // ==================== 新增：玩家动画 ====================
+    // ==================== 新增：玩家真正的肢体动画 ====================
 
     // 1. 呼吸动画 - 缓慢的缩放效果
     const breathingScale = this.animSystem.getPlayerBreathingScale();
@@ -2191,13 +2141,10 @@ export class GameEngine {
                     this.keys.has("w") || this.keys.has("s") ||
                     this.keys.has("a") || this.keys.has("d");
 
-    // 3. 移动摇摆动画 - 左右轻微倾斜
-    const swayAngle = isMoving ? this.animSystem.getPlayerWalkSway(this.player.moveSpeed / 100) : 0;
+    // 3. 上下颠簸动画 - 模拟走路时的起伏
+    const bounceY = isMoving ? this.animSystem.getPlayerWalkBounce() * 0.5 : 0; // 减小幅度
 
-    // 4. 上下颠簸动画 - 模拟走路时的起伏
-    const bounceY = isMoving ? this.animSystem.getPlayerWalkBounce() : 0;
-
-    // 5. 射击后坐力动画
+    // 4. 射击后坐力动画
     const timeSinceLastShot = now - this.lastShotTime;
     const hasRecoil = timeSinceLastShot < 100; // 射击后100ms内有后坐力
     const recoil = hasRecoil ? this.animSystem.getPlayerShootRecoil() : { x: 0, y: 0 };
@@ -2206,17 +2153,25 @@ export class GameEngine {
     const drawX = this.player.x + recoil.x;
     const drawY = this.player.y + recoil.y + bounceY;
 
-    // 移动到玩家位置并应用变换
-    this.ctx.translate(drawX, drawY);
-    this.ctx.rotate(swayAngle);
-    this.ctx.scale(breathingScale, breathingScale);
+    // 应用呼吸缩放
+    const finalScale = breathingScale;
 
-    // 绘制玩家像素精灵
-    this.pixelRenderer.drawSprite(
-      0,
-      0,
-      PixelSprites.player,
-      PixelColors.player
+    // 使用新的动画精灵渲染器 - 让玩家的手臂真正摆动
+    const animTime = this.animSystem.getTime();
+
+    // 临时应用缩放变换
+    this.ctx.translate(drawX, drawY);
+    this.ctx.scale(finalScale, finalScale);
+    this.ctx.translate(-drawX, -drawY);
+
+    // 渲染带动画的玩家精灵（手臂会摆动）
+    animatedSpriteRenderer.renderAnimatedPlayer(
+      this.ctx,
+      drawX,
+      drawY,
+      animTime,
+      isMoving,
+      4 // 像素大小
     );
 
     // 恢复变换矩阵
