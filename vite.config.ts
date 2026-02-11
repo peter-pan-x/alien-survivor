@@ -2,6 +2,10 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vite";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const plugins = [react(), tailwindcss()];
 
@@ -10,21 +14,21 @@ export default defineConfig({
   plugins,
   resolve: {
     alias: {
-      "@": path.resolve(import.meta.dirname, "client", "src"),
-      "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+      "@": path.resolve(__dirname, "client", "src"),
+      "@shared": path.resolve(__dirname, "shared"),
+      "@assets": path.resolve(__dirname, "attached_assets"),
     },
   },
-  envDir: path.resolve(import.meta.dirname),
-  root: path.resolve(import.meta.dirname, "client"),
+  envDir: path.resolve(__dirname),
+  root: path.resolve(__dirname, "client"),
   build: {
-    outDir: path.resolve(import.meta.dirname, "client/dist/public"),
+    outDir: path.resolve(__dirname, "client/dist/public"),
     emptyOutDir: true,
   },
   server: {
     port: 5173,
-    strictPort: false, // Will find next available port if 5173 is busy
-    host: "127.0.0.1", // Use 127.0.0.1 explicitly to avoid permission issues
+    strictPort: false,
+    host: "127.0.0.1",
     allowedHosts: [
       ".manuspre.computer",
       ".manus.computer",
