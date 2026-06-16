@@ -67,6 +67,19 @@ function getSkillGlyph(skill: SkillEffect): string {
   return skill.type.slice(0, 2).toUpperCase();
 }
 
+function getSkillIconKind(skill: SkillEffect): string {
+  if (skill.id.includes("frost")) return "frost";
+  if (skill.id.includes("flame")) return "flame";
+  if (skill.id.includes("lightning")) return "lightning";
+  if (skill.id.includes("shield")) return "shield";
+  if (skill.id.includes("orbital")) return "drone";
+  if (skill.id.includes("critical")) return "crit";
+  if (skill.id.includes("speed")) return "speed";
+  if (skill.id.includes("range")) return "range";
+  if (skill.id.includes("pierce")) return "pierce";
+  return "core";
+}
+
 function getEvolutionLabel(skill: SkillEffect): string | null {
   if (skill.tags?.includes("evolution")) return "EVOLUTION READY";
   if (skill.evolvesTo) return `EVOLVES -> ${skill.evolvesTo.replace(/_/g, " ").toUpperCase()}`;
@@ -421,7 +434,11 @@ function LevelUp({
                   className={`pixelx-skill-card rarity-${skill.rarity ?? "common"} ${skill.tags?.includes("evolution") ? "is-evolution" : ""}`}
                   onClick={() => onSelectSkill(skill)}
                 >
-                  <div className="pixelx-skill-glyph">{getSkillGlyph(skill)}</div>
+                  <div className={`pixelx-skill-glyph skill-icon-${getSkillIconKind(skill)}`}>
+                    <i />
+                    <b />
+                    <span>{getSkillGlyph(skill)}</span>
+                  </div>
                   <div className="pixelx-skill-copy">
                     <span>{getRarityLabel(skill)} / {skill.type.toUpperCase()}</span>
                     <strong>{skill.name}</strong>

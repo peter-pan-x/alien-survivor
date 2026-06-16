@@ -946,23 +946,160 @@
 
 .pixelx-skill-card {
   display: grid;
-  grid-template-columns: 64px 1fr;
-  gap: 14px;
-  min-height: 190px;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 12px;
+  min-height: 310px;
   padding: 16px;
 }
 
 .pixelx-skill-glyph {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 58px;
-  height: 58px;
+  width: 76px;
+  height: 76px;
+  overflow: hidden;
   color: #04111a;
-  background: #67e8f9;
-  border: 4px solid #cffafe;
-  box-shadow: 0 0 18px rgba(103, 232, 249, 0.25);
-  font-size: 18px;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(34, 211, 238, 0.32), transparent 38%),
+    #06131d;
+  border: 4px solid #67e8f9;
+  box-shadow: inset 0 0 0 3px #020617, 0 0 18px rgba(103, 232, 249, 0.25);
+  font-size: 12px;
   font-weight: 900;
+}
+
+.pixelx-skill-glyph::before,
+.pixelx-skill-glyph::after,
+.pixelx-skill-glyph i,
+.pixelx-skill-glyph b {
+  content: "";
+  position: absolute;
+  display: block;
+}
+
+.pixelx-skill-glyph span {
+  position: absolute;
+  left: 6px;
+  bottom: 5px;
+  color: #dffcff;
+  text-shadow: 1px 1px 0 #020617;
+  z-index: 4;
+}
+
+.skill-icon-frost::before {
+  left: 30px;
+  top: 10px;
+  width: 8px;
+  height: 50px;
+  background: #e0f2fe;
+  box-shadow:
+    -20px 20px 0 -2px #38bdf8,
+    20px 20px 0 -2px #38bdf8,
+    0 0 16px 4px rgba(56, 189, 248, 0.65);
+  transform: rotate(45deg);
+}
+
+.skill-icon-frost::after {
+  left: 16px;
+  top: 32px;
+  width: 42px;
+  height: 8px;
+  background: #7dd3fc;
+  box-shadow: 0 0 18px rgba(125, 211, 252, 0.72);
+}
+
+.skill-icon-drone::before {
+  left: 24px;
+  top: 24px;
+  width: 24px;
+  height: 24px;
+  background: #e0f2fe;
+  border: 4px solid #38bdf8;
+  box-shadow: 0 0 0 5px #082f49, 0 0 18px rgba(34, 211, 238, 0.45);
+}
+
+.skill-icon-drone::after {
+  left: 14px;
+  top: 14px;
+  width: 48px;
+  height: 48px;
+  border: 3px dotted #84cc16;
+  transform: rotate(24deg);
+}
+
+.skill-icon-shield::before {
+  left: 22px;
+  top: 14px;
+  width: 34px;
+  height: 44px;
+  background: linear-gradient(135deg, #bef264, #16a34a);
+  clip-path: polygon(50% 0, 92% 14%, 82% 72%, 50% 100%, 18% 72%, 8% 14%);
+  box-shadow: 0 0 18px rgba(132, 204, 22, 0.62);
+}
+
+.skill-icon-shield::after {
+  left: 31px;
+  top: 22px;
+  width: 16px;
+  height: 24px;
+  border: 3px solid #ecfccb;
+  border-top: 0;
+  opacity: 0.62;
+}
+
+.skill-icon-lightning::before {
+  left: 28px;
+  top: 10px;
+  width: 18px;
+  height: 54px;
+  background: #fde047;
+  clip-path: polygon(52% 0, 100% 0, 64% 38%, 100% 38%, 32% 100%, 48% 54%, 8% 54%);
+  box-shadow: 0 0 18px rgba(250, 204, 21, 0.72);
+}
+
+.skill-icon-flame::before {
+  left: 24px;
+  top: 15px;
+  width: 30px;
+  height: 42px;
+  background: linear-gradient(#fef08a, #f97316 46%, #dc2626);
+  clip-path: polygon(50% 0, 78% 28%, 64% 32%, 92% 62%, 50% 100%, 12% 70%, 30% 46%, 18% 34%);
+  box-shadow: 0 0 20px rgba(249, 115, 22, 0.72);
+}
+
+.skill-icon-crit::before,
+.skill-icon-speed::before,
+.skill-icon-range::before,
+.skill-icon-pierce::before,
+.skill-icon-core::before {
+  left: 24px;
+  top: 24px;
+  width: 28px;
+  height: 28px;
+  background: #38bdf8;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.62);
+  transform: rotate(45deg);
+}
+
+.skill-icon-speed::after {
+  left: 10px;
+  top: 28px;
+  width: 52px;
+  height: 5px;
+  background: #bef264;
+  box-shadow: 10px 12px 0 #84cc16, 18px -12px 0 #e0f2fe;
+}
+
+.skill-icon-range::after,
+.skill-icon-pierce::after {
+  left: 13px;
+  top: 35px;
+  width: 52px;
+  height: 5px;
+  background: #e0f2fe;
+  box-shadow: 18px -10px 0 -1px #38bdf8, 18px 10px 0 -1px #38bdf8;
 }
 
 .pixelx-skill-card.rarity-rare .pixelx-skill-glyph {
@@ -981,12 +1118,15 @@
 
 .pixelx-skill-copy {
   display: grid;
+  width: 100%;
   gap: 8px;
+  text-align: center;
 }
 
 .pixelx-skill-copy strong {
   color: #f8fafc;
-  font-size: 18px;
+  font-size: 20px;
+  line-height: 1.1;
 }
 
 .pixelx-skill-copy p {
@@ -998,6 +1138,7 @@
 
 .pixelx-skill-copy em {
   align-self: end;
+  justify-self: center;
   width: fit-content;
   padding: 4px 6px;
   color: #7dd3fc;
@@ -1246,6 +1387,16 @@
   .pixelx-skill-card {
     min-height: auto;
     grid-template-columns: 54px 1fr;
+    justify-items: stretch;
+    text-align: left;
+  }
+
+  .pixelx-skill-card .pixelx-skill-copy {
+    text-align: left;
+  }
+
+  .pixelx-skill-card .pixelx-skill-copy em {
+    justify-self: start;
   }
 }
 

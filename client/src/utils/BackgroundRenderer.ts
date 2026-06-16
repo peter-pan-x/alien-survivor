@@ -98,6 +98,17 @@ export class BackgroundRenderer {
     }
 
     this.drawAlienMoss(ctx, cameraX, cameraY * yScale);
+    this.drawMidgroundClusters(ctx, cameraX, cameraY * yScale);
+
+    ctx.strokeStyle = GRID;
+    ctx.globalAlpha = 0.12;
+    for (let y = -offsetY; y <= this.height; y += this.gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(this.width, y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
 
     // 轻微边缘暗角，贴近参考图的战场聚焦感
     const vignette = ctx.createRadialGradient(
@@ -114,17 +125,6 @@ export class BackgroundRenderer {
     ctx.fillRect(0, 0, this.width, this.height);
 
     this.drawForegroundFrame(ctx, cameraX, cameraY);
-
-    ctx.strokeStyle = GRID;
-    ctx.globalAlpha = 0.18;
-    for (let y = -offsetY; y <= this.height; y += this.gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(this.width, y);
-      ctx.stroke();
-    }
-
-    ctx.globalAlpha = 1.0;
   }
 
   /**
@@ -192,6 +192,84 @@ export class BackgroundRenderer {
       }
     }
     ctx.restore();
+  }
+
+  private drawMidgroundClusters(ctx: CanvasRenderingContext2D, cameraX: number, cameraY: number): void {
+    const cell = 220;
+    const offsetX = cameraX % cell;
+    const offsetY = cameraY % cell;
+
+    ctx.save();
+    for (let y = -offsetY - cell; y < this.height + cell; y += cell) {
+      for (let x = -offsetX - cell; x < this.width + cell; x += cell) {
+        const seed = Math.sin((x + cameraX) * 5.83 + (y + cameraY) * 2.17) * 24634.6345;
+        const n = seed - Math.floor(seed);
+        if (n < 0.48) continue;
+
+        const px = Math.floor(x + (n * 137) % 150);
+        const py = Math.floor(y + (n * 89) % 130);
+        const type = Math.floor(n * 10) % 3;
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+        ctx.beginPath();
+        ctx.ellipse(px + 12, py + 15, 28, 9, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (type === 0) {
+          this.drawDistantCrystalCluster(ctx, px, py, n);
+        } else if (type === 1) {
+          this.drawDistantSporePods(ctx, px, py, n);
+        } else {
+          this.drawDistantRockCluster(ctx, px, py, n);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  private drawDistantCrystalCluster(ctx: CanvasRenderingContext2D, x: number, y: number, seed: number): void {
+    const count = 3 + Math.floor(seed * 4);
+    for (let i = 0; i < count; i++) {
+      const h = 12 + ((seed * 31 + i * 7) % 18);
+      const px = Math.floor(x + i * 7 - count * 3);
+      const py = Math.floor(y + (i % 2) * 4);
+      ctx.fillStyle = "rgba(8, 47, 73, 0.92)";
+      ctx.fillRect(px - 2, py - h + 2, 7, h);
+      ctx.fillStyle = i % 2 === 0 ? "rgba(34, 211, 238, 0.72)" : "rgba(132, 204, 22, 0.62)";
+      ctx.fillRect(px, py - h, 4, h);
+      ctx.fillStyle = "rgba(236, 254, 255, 0.76)";
+      ctx.fillRect(px + 1, py - h + 3, 2, 3);
+    }
+  }
+
+  private drawDistantSporePods(ctx: CanvasRenderingContext2D, x: number, y: number, seed: number): void {
+    const count = 2 + Math.floor(seed * 4);
+    for (let i = 0; i < count; i++) {
+      const px = Math.floor(x + i * 13 - count * 5);
+      const py = Math.floor(y + (i % 2) * 7);
+      ctx.fillStyle = "rgba(4, 47, 46, 0.95)";
+      ctx.fillRect(px - 3, py + 4, 8, 8);
+      ctx.fillStyle = "rgba(20, 184, 166, 0.72)";
+      ctx.beginPath();
+      ctx.ellipse(px, py, 13, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(204, 251, 241, 0.78)";
+      ctx.fillRect(px - 2, py - 4, 5, 2);
+    }
+  }
+
+  private drawDistantRockCluster(ctx: CanvasRenderingContext2D, x: number, y: number, seed: number): void {
+    const count = 4 + Math.floor(seed * 5);
+    for (let i = 0; i < count; i++) {
+      const px = Math.floor(x + Math.sin(seed * 20 + i) * 22);
+      const py = Math.floor(y + Math.cos(seed * 31 + i) * 12);
+      const w = 8 + ((seed * 17 + i * 3) % 12);
+      const h = 4 + ((seed * 11 + i * 2) % 7);
+      ctx.fillStyle = "rgba(17, 38, 48, 0.9)";
+      ctx.fillRect(px, py, w, h);
+      ctx.fillStyle = "rgba(45, 212, 191, 0.18)";
+      ctx.fillRect(px + 2, py - 1, Math.max(3, w * 0.45), 2);
+    }
   }
 
   private drawForegroundFrame(ctx: CanvasRenderingContext2D, cameraX: number, cameraY: number): void {

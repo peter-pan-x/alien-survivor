@@ -2219,28 +2219,103 @@ export class GameEngine {
     this.ctx.save();
     this.ctx.imageSmoothingEnabled = false;
 
-    // 渲染玩家子弹 - 像素风格圆形
+    const playerBulletCore = this.player.hasFlameAttack
+      ? "#fb923c"
+      : this.player.hasFrostShot
+        ? "#bfdbfe"
+        : "#7dd3fc";
+    const playerBulletEdge = this.player.hasFlameAttack
+      ? "#dc2626"
+      : this.player.hasFrostShot
+        ? "#38bdf8"
+        : "#0ea5e9";
+
+    // 渲染玩家子弹 - 45 度能量弹片
     for (const bullet of this.bulletPool.getActive()) {
-      this.pixelRenderer.drawPixelCircle(
+      this.drawEnergyShard(
         bullet.x,
         bullet.y,
         bullet.radius,
-        GAME_CONFIG.COLORS.BULLET_GRADIENT_START,
-        GAME_CONFIG.COLORS.BULLET_GRADIENT_END
+        bullet.vx,
+        bullet.vy,
+        playerBulletCore,
+        playerBulletEdge
       );
     }
 
-    // 渲染敌人子弹 - 像素风格圆形
+    // 渲染敌人子弹 - 紫红孢子弹
     for (const bullet of this.enemyBulletPool.getActive()) {
-      this.pixelRenderer.drawPixelCircle(
+      this.drawEnemySporeBullet(
         bullet.x,
         bullet.y,
         bullet.radius,
-        "#a855f7",
-        "#7c3aed"
+        bullet.vx,
+        bullet.vy
       );
     }
 
+    this.ctx.restore();
+  }
+
+  private drawEnergyShard(
+    x: number,
+    y: number,
+    radius: number,
+    vx: number,
+    vy: number,
+    coreColor: string,
+    edgeColor: string
+  ): void {
+    const angle = Math.atan2(vy, vx);
+    const length = Math.max(12, radius * 5.4);
+    const thickness = Math.max(4, radius * 1.45);
+    const pixel = 2;
+
+    this.ctx.save();
+    this.ctx.translate(x, y);
+    this.ctx.rotate(angle);
+    this.ctx.imageSmoothingEnabled = false;
+
+    this.ctx.fillStyle = "rgba(2, 6, 23, 0.34)";
+    this.ctx.fillRect(-length * 0.38, thickness * 0.95, length * 0.72, pixel);
+
+    this.ctx.fillStyle = edgeColor;
+    this.ctx.fillRect(-length * 0.52, -pixel, length * 0.72, pixel * 2);
+    this.ctx.fillRect(length * 0.1, -thickness * 0.5, length * 0.42, thickness);
+
+    this.ctx.fillStyle = coreColor;
+    this.ctx.fillRect(-length * 0.12, -pixel * 2, length * 0.42, pixel * 4);
+    this.ctx.fillRect(length * 0.38, -pixel, pixel * 3, pixel * 2);
+
+    this.ctx.fillStyle = "#e0f2fe";
+    this.ctx.fillRect(-length * 0.02, -pixel, pixel * 2, pixel);
+    this.ctx.restore();
+  }
+
+  private drawEnemySporeBullet(
+    x: number,
+    y: number,
+    radius: number,
+    vx: number,
+    vy: number
+  ): void {
+    const angle = Math.atan2(vy, vx);
+    const size = Math.max(8, radius * 3.2);
+
+    this.ctx.save();
+    this.ctx.translate(x, y);
+    this.ctx.rotate(angle);
+    this.ctx.imageSmoothingEnabled = false;
+
+    this.ctx.fillStyle = "rgba(0, 0, 0, 0.32)";
+    this.ctx.fillRect(-size * 0.5, size * 0.45, size, 2);
+
+    this.ctx.fillStyle = "#4c0519";
+    this.ctx.fillRect(-size * 0.45, -size * 0.35, size * 0.85, size * 0.7);
+    this.ctx.fillStyle = "#e11d48";
+    this.ctx.fillRect(-size * 0.28, -size * 0.22, size * 0.56, size * 0.44);
+    this.ctx.fillStyle = "#fb7185";
+    this.ctx.fillRect(size * 0.04, -size * 0.22, 3, 3);
     this.ctx.restore();
   }
 
