@@ -284,7 +284,9 @@ export class AchievementSystem {
         });
 
         newlyUnlocked.push(achievement);
-        console.log(`[Achievement] 解锁成就: ${achievement.name}`);
+        if (import.meta.env.DEV) {
+          console.log(`[Achievement] 解锁成就: ${achievement.name}`);
+        }
       }
     }
 
@@ -371,7 +373,9 @@ export class AchievementSystem {
       if (saved) {
         const progressArray = JSON.parse(saved);
         this.progress = new Map(progressArray);
-        console.log('[Achievement] 加载成就进度成功');
+        if (import.meta.env.DEV) {
+          console.log('[Achievement] 加载成就进度成功');
+        }
       }
     } catch (error) {
       console.error('[Achievement] 加载成就进度失败:', error);
@@ -391,7 +395,9 @@ export class AchievementSystem {
       });
     }
     this.saveProgress();
-    console.log('[Achievement] 成就进度已重置');
+    if (import.meta.env.DEV) {
+      console.log('[Achievement] 成就进度已重置');
+    }
   }
 
   /**

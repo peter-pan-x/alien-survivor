@@ -1,4 +1,4 @@
-import { Player, Enemy, GameStats, Bullet } from "../gameTypes";
+import { Player, Enemy, EnemyType, GameStats, Bullet, GameMode, EntityAnimationState, CombatHudSnapshot, RadarBlip } from "../gameTypes";
 import { GAME_CONFIG } from "../gameConfig";
 import { EnemyManager } from "../utils/EnemyManager";
 import { WeaponSystem } from "../utils/WeaponSystem";
@@ -24,6 +24,14 @@ import { DailyChallengeSystem } from "../systems/DailyChallengeSystem";
 import { AchievementSystem, SessionData } from "../systems/AchievementSystem";
 import { animationSystem } from "../systems/AnimationSystem";
 import { animatedSpriteRenderer } from "../systems/AnimatedSpriteRenderer";
+import { GameDirector } from "../systems/GameDirector";
+
+interface EnemyDeathAnimation {
+  x: number;
+  y: number;
+  type: EnemyType;
+  startedAt: number;
+}
 
 /**
  * 游戏引擎核心类
@@ -63,6 +71,7 @@ export class GameEngine {
   private achievementSystem: AchievementSystem; // 成就系统（新增）
   private sessionData: SessionData; // 会话数据（新增）
   private animSystem = animationSystem; // 动画系统（新增 - 让角色活起来）
+  private gameDirector: GameDirector;
 
   // 游戏状态
   private gameStartTime: number = 0;
@@ -72,6 +81,8 @@ export class GameEngine {
   private shotToggle: boolean = false; // 双弹道左右交替偏移
   private isInvincible: boolean = false; // 新增：是否处于无敌状态
   private invincibleEndTime: number = 0; // 新增：无敌结束时间
+  private gameMode: GameMode = "classic";
+  private enemyDeathAnimations: EnemyDeathAnimation[] = [];
   private stats: GameStats = {
     score: 0,
     killCount: 0,
@@ -132,6 +143,7 @@ export class GameEngine {
     this.dailyChallengeSystem = new DailyChallengeSystem(); // 每日挑战系统（新增）
     this.achievementSystem = new AchievementSystem(); // 成就系统（新增）
     this.sessionData = this.achievementSystem.createSessionData(); // 会话数据（新增）
+    this.gameDirector = new GameDirector();
 
     // 初始化技能系统（独立模块）
     this.skillSystem = new SkillSystem();
@@ -142,10 +154,7 @@ export class GameEngine {
       this.expOrbSystem.magnetizeAll();
     });
 
-    // 在开发模式下启用性能监控
-    this.performanceMonitor = new PerformanceMonitor(
-      import.meta.env.DEV || false
-    );
+    this.performanceMonitor = new PerformanceMonitor(false);
 
     // 初始化玩家（世界坐标原点）
     this.player = this.createInitialPlayer();
@@ -209,7 +218,9 @@ export class GameEngine {
       this.spatialGrid = new SpatialGrid(displayWidth, displayHeight, 100);
     }
 
-    console.log(`[GameEngine] Canvas resized to ${displayWidth}x${displayHeight} (DPR: ${dpr.toFixed(2)})`);
+    if (import.meta.env.DEV) {
+      console.log(`[GameEngine] Canvas resized to ${displayWidth}x${displayHeight} (DPR: ${dpr.toFixed(2)})`);
+    }
   }
 
   /**
@@ -219,8 +230,9 @@ export class GameEngine {
     this.keyboardHandler = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "p" && e.ctrlKey) {
         e.preventDefault();
-        const currentState = this.performanceMonitor.getFPS() > 0;
-        this.performanceMonitor.setEnabled(!currentState);
+        if (import.meta.env.DEV) {
+          this.performanceMonitor.setEnabled(!this.performanceMonitor.isEnabled());
+        }
       }
     };
 
@@ -267,6 +279,8 @@ export class GameEngine {
       rareSkillSelections: {},
       // 记录技能出现次数（用于特殊技能"生命汲取"的出现递减）
       skillAppearances: {},
+      skillLevels: {},
+      evolvedSkills: {},
       weapons: [],
       // 经验球拾取范围
       pickupRange: EXP_ORB_CONFIG.BASE_PICKUP_RANGE,
@@ -276,13 +290,15 @@ export class GameEngine {
   /**
    * 重置游戏状态
    */
-  public reset(): void {
+  public reset(mode: GameMode = this.gameMode): void {
+    this.gameMode = mode;
     this.player = this.createInitialPlayer();
     this.bulletPool.clear();
     this.enemyBulletPool.clear();
     this.enemyManager.reset();
     this.particlePool.clear();
     this.damageNumbers.clear();
+    this.enemyDeathAnimations = [];
     this.performanceMonitor.reset();
     this.spatialGrid.clear();  // 清空空间网格，防止残留数据
     this.lastShotTime = 0;
@@ -315,6 +331,43 @@ export class GameEngine {
     // 重置无敌状态（新增）
     this.isInvincible = false;
     this.invincibleEndTime = 0;
+  }
+
+  public setGameMode(mode: GameMode): void {
+    this.gameMode = mode;
+  }
+
+  public getGameMode(): GameMode {
+    return this.gameMode;
+  }
+
+  public getCurrentChallengeId(): string | undefined {
+    return this.dailyChallengeSystem.getCurrentChallenge()?.id;
+  }
+
+  private isDailyChallengeActive(): boolean {
+    return this.gameMode === "daily" && this.dailyChallengeSystem.hasActiveChallenge();
+  }
+
+  private applyDailyModifier(value: number, type: "enemy_speed" | "player_damage" | "exp_rate" | "special_enemy" | "boss_frequency"): number {
+    if (!this.isDailyChallengeActive()) return value;
+    return this.dailyChallengeSystem.applyChallengeModifiers(value, type);
+  }
+
+  private getScoreMultiplier(): number {
+    return this.isDailyChallengeActive() ? this.dailyChallengeSystem.getScoreMultiplier() : 1;
+  }
+
+  private getExpMultiplier(): number {
+    return this.applyDailyModifier(1, "exp_rate");
+  }
+
+  private getBossFrequencyMultiplier(): number {
+    return this.applyDailyModifier(1, "boss_frequency");
+  }
+
+  private getModifiedPlayerDamage(damage: number): number {
+    return Math.max(1, Math.floor(this.applyDailyModifier(damage, "player_damage")));
   }
 
   /**
@@ -367,6 +420,42 @@ export class GameEngine {
     return { ...this.stats };
   }
 
+  public getCombatHudSnapshot(): CombatHudSnapshot {
+    const radarRange = 900;
+    const enemies = this.enemyManager
+      .getEnemies()
+      .map((enemy) => {
+        const dx = enemy.x - this.player.x;
+        const dy = enemy.y - this.player.y;
+        const distance = Math.hypot(dx, dy);
+        return { enemy, dx, dy, distance };
+      })
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 18);
+
+    const radarBlips: RadarBlip[] = enemies.map(({ enemy, dx, dy }) => ({
+      x: Math.max(-1, Math.min(1, dx / radarRange)),
+      y: Math.max(-1, Math.min(1, dy / radarRange)),
+      type: enemy.type,
+      threat: enemy.type === "elite" ? ("elite" as const) : ("normal" as const),
+    }));
+
+    if (this.currentBoss) {
+      radarBlips.unshift({
+        x: Math.max(-1, Math.min(1, (this.currentBoss.x - this.player.x) / radarRange)),
+        y: Math.max(-1, Math.min(1, (this.currentBoss.y - this.player.y) / radarRange)),
+        type: "boss",
+        threat: "boss",
+      });
+    }
+
+    return {
+      radarBlips,
+      enemyCount: this.enemyManager.getEnemies().length,
+      bossActive: Boolean(this.currentBoss),
+    };
+  }
+
   /**
    * 计算升级所需经验值
    * 规则：首级需击杀5个敌人，之后每级在上一级基础上增加33%
@@ -415,13 +504,15 @@ export class GameEngine {
       this.audioSystem.playSound("levelup");
 
       // 检查是否需要生成Boss（每10级）
-      if (this.bossSystem.shouldSpawnBoss(this.player.level)) {
+      const bossFrequencyMultiplier = this.getBossFrequencyMultiplier();
+      if (this.bossSystem.shouldSpawnBoss(this.player.level, bossFrequencyMultiplier)) {
         const boss = this.bossSystem.spawnBoss(
           this.player.level,
           this.player.x,
           this.player.y,
           this.width,
-          this.height
+          this.height,
+          bossFrequencyMultiplier
         );
         if (boss) {
           this.currentBoss = boss;
@@ -572,6 +663,7 @@ export class GameEngine {
     // 更新存活时间
     const survivalTime = Math.floor((now - this.gameStartTime) / 1000);
     this.stats.survivalTime = survivalTime;
+    this.stats.combatHud = this.getCombatHudSnapshot();
     if (this.onStatsUpdate) {
       this.onStatsUpdate(this.stats);
     }
@@ -585,6 +677,8 @@ export class GameEngine {
     // 更新玩家位置
     this.updatePlayerPosition(deltaTime);
 
+    const directorState = this.gameDirector.getState(survivalTime, this.player.level);
+
     // 生成敌人（无尽地图：基于玩家世界坐标和等级）
     this.enemyManager.spawnEnemy(
       this.width,
@@ -592,7 +686,14 @@ export class GameEngine {
       now,
       this.player.x,
       this.player.y,
-      this.player.level
+      this.player.level,
+      {
+        speedMultiplier: this.applyDailyModifier(1, "enemy_speed"),
+        healthMultiplier: this.applyDailyModifier(1, "special_enemy"),
+        spawnCountMultiplier: directorState.spawnCountMultiplier,
+        spawnIntervalMultiplier: directorState.spawnIntervalMultiplier,
+        typeBias: directorState.enemyTypeBias,
+      }
     );
 
     // 更新敌人
@@ -723,7 +824,7 @@ export class GameEngine {
           this.sessionData
         );
 
-        if (newlyUnlocked.length > 0) {
+        if (import.meta.env.DEV && newlyUnlocked.length > 0) {
           console.log(`[Achievement] 新解锁 ${newlyUnlocked.length} 个成就！`);
         }
 
@@ -1143,8 +1244,11 @@ export class GameEngine {
             damage += bonusDamage;
           }
 
+          damage = this.getModifiedPlayerDamage(damage);
+
           // 应用伤害
           enemy.health -= damage;
+          enemy.lastHitTime = Date.now();
           this.damageNumbers.add(enemy.x, enemy.y, damage, isCrit);
 
           // 冰冻效果：击中后冻结敌人
@@ -1235,6 +1339,8 @@ export class GameEngine {
             damage += bonusDamage;
           }
 
+          damage = this.getModifiedPlayerDamage(damage);
+
           this.currentBoss.health -= damage;
           this.damageNumbers.add(this.currentBoss.x, this.currentBoss.y, damage, isCrit);
 
@@ -1264,11 +1370,11 @@ export class GameEngine {
             this.stats.killCount++;
             // 应用每日挑战的分数倍数修正（新增）
             const baseScore = GAME_CONFIG.LEVELING.SCORE_PER_BOSS_KILL;
-            const challengeScoreMultiplier = this.dailyChallengeSystem.getScoreMultiplier();
+            const challengeScoreMultiplier = this.getScoreMultiplier();
             this.stats.score += Math.ceil(baseScore * challengeScoreMultiplier);
             // Boss死亡生成大量经验球
             // 应用每日挑战的经验倍数修正（新增）
-            const challengeExpMultiplier = this.dailyChallengeSystem.getExpMultiplier();
+            const challengeExpMultiplier = this.getExpMultiplier();
             const bossExpTotal = GAME_CONFIG.LEVELING.EXP_PER_KILL *
               (GAME_CONFIG.LEVELING.BOSS_EXP_REWARD_MULTIPLIER ?? 50) * challengeExpMultiplier;
             // 分成多个经验球散落
@@ -1300,6 +1406,12 @@ export class GameEngine {
     for (let i = enemies.length - 1; i >= 0; i--) {
       if (enemies[i].health <= 0) {
         const enemy = enemies[i];
+        this.enemyDeathAnimations.push({
+          x: enemy.x,
+          y: enemy.y,
+          type: enemy.type,
+          startedAt: Date.now(),
+        });
         this.particlePool.createParticles(
           enemy.x,
           enemy.y,
@@ -1309,7 +1421,7 @@ export class GameEngine {
 
         // 敌人死亡触发分裂子弹（向四周发射3颗子弹）
         if (this.player.hasAOEExplosion) {
-          const splitDamage = Math.floor(this.player.attackDamage * this.player.aoeDamage);
+          const splitDamage = this.getModifiedPlayerDamage(Math.floor(this.player.attackDamage * this.player.aoeDamage));
           const splitRange = this.player.aoeRadius;
           const bulletCount = 3;
           const bulletSpeed = 4;
@@ -1354,7 +1466,7 @@ export class GameEngine {
         this.sessionData.killsWithoutTakingDamage++;
         // 应用每日挑战的分数倍数修正（新增）
         const baseScore = 10;
-        const challengeScoreMultiplier = this.dailyChallengeSystem.getScoreMultiplier();
+        const challengeScoreMultiplier = this.getScoreMultiplier();
         this.stats.score += Math.ceil(baseScore * challengeScoreMultiplier);
 
         // 播放击杀音效
@@ -1371,7 +1483,7 @@ export class GameEngine {
         // 生成经验球（不再直接给经验）
         // 应用每日挑战的经验倍数修正（新增）
         const baseExp = GAME_CONFIG.LEVELING.EXP_PER_KILL;
-        const challengeExpMultiplier = this.dailyChallengeSystem.getExpMultiplier();
+        const challengeExpMultiplier = this.getExpMultiplier();
         const finalExp = Math.ceil(baseExp * challengeExpMultiplier);
         this.expOrbSystem.spawnOrb(enemy.x, enemy.y, finalExp);
 
@@ -1497,6 +1609,8 @@ export class GameEngine {
       return; // 无敌期间不受伤
     }
 
+    this.lastDamageTime = now;
+
     // 应用护盾和伤害
     if (this.player.shield > 0) {
       this.player.shield -= damage;
@@ -1587,10 +1701,10 @@ export class GameEngine {
     this.ctx.save();
 
     const pixelSize = 4;
-    // 辅助函数：强制对齐到像素网格
     const align = (v: number) => Math.floor(v / pixelSize) * pixelSize;
-    
-    const trees = this.treeSystem.getTreesInArea(this.player.x, this.player.y, 900);
+    const trees = this.treeSystem
+      .getTreesInArea(this.player.x, this.player.y, 1000)
+      .sort((a, b) => a.y - b.y);
     
     for (const tree of trees) {
       const shade = tree.shade ?? 1;
@@ -1610,14 +1724,9 @@ export class GameEngine {
       
       const adjustColor = (hex: string) => this.adjustTreeColor(hex, shade);
 
-      // 阴影通用绘制（像素化椭圆）
-      this.ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
-      const shadowW = align(r * 2.2);
-      const shadowH = align(r * 1.2);
-      this.ctx.fillRect(align(tree.x - shadowW/2 + 4), align(tree.y - shadowH/2 + 6), shadowW, shadowH);
+      this.drawIsoShadow(tree.x, tree.y + r * 0.16, r * 1.25, r * 0.42, 0.38);
 
       if (alienType === 0) {
-        // ==================== 扭曲荆棘 (Twisted Thorns) ====================
         const colors = {
           outline: "#2d0a31",
           base: "#4a1252",
@@ -1626,24 +1735,29 @@ export class GameEngine {
           highlight: "#e1bee7",
         };
 
-        // 使用像素块构建扭曲触手
+        const rootW = align(r * 1.35);
+        const rootH = align(r * 0.34);
+        this.ctx.fillStyle = adjustColor(colors.outline);
+        this.ctx.fillRect(align(tree.x - rootW / 2), align(tree.y + r * 0.12), rootW, rootH);
+        this.ctx.fillStyle = adjustColor(colors.base);
+        this.ctx.fillRect(align(tree.x - rootW / 2 + pixelSize), align(tree.y + r * 0.12), rootW - pixelSize * 2, Math.max(pixelSize, rootH - pixelSize));
+
         const tentacleCount = 4 + Math.floor(rand(1) * 3);
         for (let i = 0; i < tentacleCount; i++) {
-           const baseAngle = (i / tentacleCount) * Math.PI * 2;
-           let cx = tree.x;
-           let cy = tree.y;
-           const length = r * (1.2 + rand(i+10) * 0.5);
-           const segs = 8;
+           const side = i % 2 === 0 ? -1 : 1;
+           let cx = tree.x + side * r * (0.12 + rand(i) * 0.28);
+           let cy = tree.y + r * 0.06;
+           const length = r * (0.95 + rand(i + 10) * 0.52);
+           const segs = 7;
            
            for (let j = 0; j < segs; j++) {
               const progress = j / segs;
-              const width = Math.max(pixelSize, (1 - progress) * r * 0.5);
-              const angle = baseAngle + Math.sin(progress * 3 + rand(i)) * 1.0;
+              const width = Math.max(pixelSize, (1 - progress) * r * 0.28);
+              const curl = Math.sin(progress * 4 + rand(i) * Math.PI) * r * 0.1;
               
-              cx += Math.cos(angle) * (length / segs);
-              cy += Math.sin(angle) * (length / segs);
+              cx += side * (length / segs) * 0.34 + curl;
+              cy -= (length / segs) * (0.68 + progress * 0.15);
               
-              // 绘制一段像素块
               const x = align(cx);
               const y = align(cy);
               const w = align(width);
@@ -1654,11 +1768,10 @@ export class GameEngine {
               this.ctx.fillStyle = adjustColor(j % 2 === 0 ? colors.base : colors.mid);
               this.ctx.fillRect(x, y, w, w);
               
-              // 尖刺装饰
               if (rand(i*10+j) > 0.7) {
                  const spikeLen = pixelSize * 2;
-                 const sx = x + (rand(j) > 0.5 ? w : -spikeLen);
-                 const sy = y + (rand(j+1) > 0.5 ? w : -spikeLen);
+                 const sx = x + (side > 0 ? w : -spikeLen);
+                 const sy = y + (rand(j+1) > 0.5 ? 0 : -spikeLen);
                  this.ctx.fillStyle = adjustColor(colors.light);
                  this.ctx.fillRect(sx, sy, spikeLen, spikeLen);
               }
@@ -1666,7 +1779,6 @@ export class GameEngine {
         }
 
       } else if (alienType === 1) {
-        // ==================== 发光孢子 (Glowing Spores) ====================
         const colors = {
           outline: "#002f35",
           base: "#004d40",
@@ -1675,139 +1787,97 @@ export class GameEngine {
           highlight: "#b2dfdb",
         };
 
-        // 绘制像素化菌盖
-        const drawPixelCircle = (cx: number, cy: number, radius: number, color: string) => {
-           const gridR = Math.ceil(radius / pixelSize);
-           this.ctx.fillStyle = adjustColor(color);
-           for(let dx = -gridR; dx <= gridR; dx++) {
-              for(let dy = -gridR; dy <= gridR; dy++) {
-                 if (dx*dx + dy*dy <= gridR*gridR) {
-                    this.ctx.fillRect(align(cx + dx * pixelSize), align(cy + dy * pixelSize), pixelSize, pixelSize);
-                 }
-              }
-           }
+        const drawIsoCap = (cx: number, cy: number, radius: number, height: number, color: string) => {
+          this.ctx.fillStyle = adjustColor(colors.outline);
+          this.ctx.fillRect(align(cx - radius * 0.44), align(cy - height * 0.14), align(radius * 0.88), align(height * 0.55));
+          this.ctx.fillStyle = adjustColor(color);
+          this.ctx.beginPath();
+          this.ctx.ellipse(align(cx), align(cy - height * 0.32), align(radius), align(radius * 0.48), 0, 0, Math.PI * 2);
+          this.ctx.fill();
+          this.ctx.fillStyle = adjustColor(colors.light);
+          this.ctx.fillRect(align(cx - radius * 0.22), align(cy - height * 0.58), pixelSize * 2, pixelSize);
         };
 
-        // 主菌盖
-        drawPixelCircle(tree.x, tree.y, r, colors.outline);
-        drawPixelCircle(tree.x, tree.y - pixelSize, r - pixelSize, colors.base);
+        const mainH = r * 0.95;
+        drawIsoCap(tree.x, tree.y, r * 0.72, mainH, colors.base);
         
-        // 随机小菌盖
         const smallCount = 3 + Math.floor(rand(2) * 3);
         for (let i = 0; i < smallCount; i++) {
-            const angle = rand(i*20) * Math.PI * 2;
-            const dist = r * 0.6;
-            const sr = r * 0.4 * (0.8 + rand(i));
-            const sx = tree.x + Math.cos(angle) * dist;
-            const sy = tree.y + Math.sin(angle) * dist;
+            const side = i % 2 === 0 ? -1 : 1;
+            const sx = tree.x + side * r * (0.25 + rand(i * 20) * 0.45);
+            const sy = tree.y + r * (0.1 + rand(i * 21) * 0.28);
+            const sr = r * 0.28 * (0.8 + rand(i));
             
-            drawPixelCircle(sx, sy, sr, colors.outline);
-            drawPixelCircle(sx, sy - pixelSize, sr - pixelSize, colors.mid);
+            drawIsoCap(sx, sy, sr, sr * 1.05, colors.mid);
             
-            // 发光点
             if (rand(i*30) > 0.3) {
                this.ctx.fillStyle = adjustColor(colors.highlight);
-               this.ctx.fillRect(align(sx), align(sy - pixelSize), pixelSize, pixelSize);
+               this.ctx.fillRect(align(sx), align(sy - sr * 0.45), pixelSize, pixelSize);
             }
         }
         
-        // 主发光点
         this.ctx.fillStyle = adjustColor(colors.highlight);
-        this.ctx.fillRect(align(tree.x - pixelSize), align(tree.y - r * 0.5), pixelSize * 3, pixelSize * 2);
+        this.ctx.fillRect(align(tree.x - pixelSize), align(tree.y - r * 0.72), pixelSize * 3, pixelSize * 2);
 
       } else if (alienType === 2) {
-        // ==================== 橙色水晶矿石 (Orange Crystal Clusters) - 顶视图像素风格 ====================
         const colors = {
-          outline: "#3e2215",    // 深棕色描边
-          darkBase: "#8b4513",   // 深橙棕（阴影面）
-          base: "#d2691e",       // 基础橙色
-          mid: "#ff8c00",        // 中间橙色
-          light: "#ffa500",      // 亮橙色
-          highlight: "#ffd700",  // 高光金黄色
-          glow: "#ffcc66",       // 发光色
+          outline: "#083344",
+          darkBase: "#0e7490",
+          base: "#0891b2",
+          mid: "#22d3ee",
+          light: "#67e8f9",
+          highlight: "#cffafe",
+          glow: "#a7f3d0",
         };
 
-        // 绘制像素化六边形晶体尖端（从顶部看是六边形）
-        const drawCrystalTop = (cx: number, cy: number, size: number, rotOffset: number) => {
-          const s = Math.max(pixelSize * 2, size);
-          const halfS = s / 2;
-          
-          // 六边形顶视图：6个切面围绕中心
-          for (let face = 0; face < 6; face++) {
-            const angle1 = rotOffset + (face / 6) * Math.PI * 2;
-            const angle2 = rotOffset + ((face + 1) / 6) * Math.PI * 2;
-            
-            // 外边缘点
-            const x1 = cx + Math.cos(angle1) * halfS;
-            const y1 = cy + Math.sin(angle1) * halfS;
-            const x2 = cx + Math.cos(angle2) * halfS;
-            const y2 = cy + Math.sin(angle2) * halfS;
-            
-            // 根据切面朝向选择颜色（模拟光照）
-            let faceColor: string;
-            if (face === 0 || face === 5) {
-              faceColor = colors.light;      // 顶部切面（亮）
-            } else if (face === 1 || face === 2) {
-              faceColor = colors.mid;        // 右侧切面
-            } else {
-              faceColor = colors.darkBase;   // 左侧切面（暗）
-            }
-            
-            // 绘制三角形切面
-            this.ctx.fillStyle = adjustColor(faceColor);
-            this.ctx.beginPath();
-            this.ctx.moveTo(align(cx), align(cy));
-            this.ctx.lineTo(align(x1), align(y1));
-            this.ctx.lineTo(align(x2), align(y2));
-            this.ctx.closePath();
-            this.ctx.fill();
-          }
-          
-          // 描边轮廓
-          this.ctx.strokeStyle = adjustColor(colors.outline);
-          this.ctx.lineWidth = pixelSize;
+        const drawCrystal = (cx: number, cy: number, size: number, height: number) => {
+          const half = Math.max(pixelSize * 2, size / 2);
+          const topY = cy - height;
+          this.ctx.fillStyle = adjustColor(colors.outline);
           this.ctx.beginPath();
-          for (let i = 0; i < 6; i++) {
-            const angle = rotOffset + (i / 6) * Math.PI * 2;
-            const px = cx + Math.cos(angle) * halfS;
-            const py = cy + Math.sin(angle) * halfS;
-            if (i === 0) this.ctx.moveTo(align(px), align(py));
-            else this.ctx.lineTo(align(px), align(py));
-          }
+          this.ctx.moveTo(align(cx), align(topY - pixelSize));
+          this.ctx.lineTo(align(cx + half + pixelSize), align(cy));
+          this.ctx.lineTo(align(cx), align(cy + half * 0.35));
+          this.ctx.lineTo(align(cx - half - pixelSize), align(cy));
           this.ctx.closePath();
-          this.ctx.stroke();
-          
-          // 中心高光点（像素块）
+          this.ctx.fill();
+
+          this.ctx.fillStyle = adjustColor(colors.darkBase);
+          this.ctx.beginPath();
+          this.ctx.moveTo(align(cx), align(topY));
+          this.ctx.lineTo(align(cx), align(cy + half * 0.28));
+          this.ctx.lineTo(align(cx - half), align(cy));
+          this.ctx.closePath();
+          this.ctx.fill();
+
+          this.ctx.fillStyle = adjustColor(colors.mid);
+          this.ctx.beginPath();
+          this.ctx.moveTo(align(cx), align(topY));
+          this.ctx.lineTo(align(cx + half), align(cy));
+          this.ctx.lineTo(align(cx), align(cy + half * 0.28));
+          this.ctx.closePath();
+          this.ctx.fill();
+
           this.ctx.fillStyle = adjustColor(colors.highlight);
-          this.ctx.fillRect(align(cx - pixelSize), align(cy - pixelSize), pixelSize * 2, pixelSize * 2);
-          
-          // 添加小像素高光
-          this.ctx.fillStyle = adjustColor(colors.glow);
-          this.ctx.fillRect(align(cx - pixelSize * 2), align(cy - pixelSize * 0.5), pixelSize, pixelSize);
+          this.ctx.fillRect(align(cx - pixelSize), align(topY + height * 0.22), pixelSize * 2, pixelSize);
         };
 
-        // 主水晶簇：中心一个大晶体 + 周围4-6个小晶体
-        const mainSize = r * 0.7;
         const crystalCount = 4 + Math.floor(rand(2) * 3); // 4-6个
         
-        // 先绘制周围的小晶体（底层）
         for (let i = 0; i < crystalCount; i++) {
-          const angle = (i / crystalCount) * Math.PI * 2 + rand(i) * 0.5;
-          const dist = r * (0.5 + rand(i + 5) * 0.3);
-          const cx = tree.x + Math.cos(angle) * dist;
-          const cy = tree.y + Math.sin(angle) * dist;
-          const size = mainSize * (0.4 + rand(i + 10) * 0.3);
-          const rot = rand(i + 20) * Math.PI;
+          const side = i % 2 === 0 ? -1 : 1;
+          const cx = tree.x + side * r * (0.18 + rand(i + 5) * 0.55);
+          const cy = tree.y + r * (0.12 + rand(i + 7) * 0.25);
+          const size = r * (0.26 + rand(i + 10) * 0.22);
+          const height = r * (0.55 + rand(i + 12) * 0.35);
           
-          drawCrystalTop(cx, cy, size, rot);
+          drawCrystal(cx, cy, size, height);
         }
         
-        // 最后绘制中心大晶体（顶层）
-        drawCrystalTop(tree.x, tree.y, mainSize, rand(100) * Math.PI / 3);
+        drawCrystal(tree.x, tree.y, r * 0.62, r * 1.15);
         
-        // 底部岩石基座（像素块）
         const baseRadius = r * 0.3;
-        this.ctx.fillStyle = adjustColor("#2a1a10");
+        this.ctx.fillStyle = adjustColor("#05212a");
         for (let i = 0; i < 5; i++) {
           const angle = rand(i * 50) * Math.PI * 2;
           const dist = rand(i * 60) * baseRadius;
@@ -1837,6 +1907,21 @@ export class GameEngine {
     return `#${adjustedR.toString(16).padStart(2, '0')}${adjustedG.toString(16).padStart(2, '0')}${adjustedB.toString(16).padStart(2, '0')}`;
   }
 
+  private drawIsoShadow(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    alpha: number = 0.32
+  ): void {
+    this.ctx.save();
+    this.ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+    this.ctx.beginPath();
+    this.ctx.ellipse(x + width * 0.06, y + height * 0.08, width, height, 0, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.restore();
+  }
+
   /**
    * 渲染敌人 - 像素风格 + 真正的肢体动画（新增：手脚摆动、眼睛转动、身体起伏）
    */
@@ -1850,11 +1935,20 @@ export class GameEngine {
 
       // 使用新的动画精灵渲染器 - 让敌人的手脚真正动起来
       const animTime = this.animSystem.getTime();
+      const now = Date.now();
+      const enemyState: EntityAnimationState =
+        enemy.lastHitTime && now - enemy.lastHitTime < 160
+          ? "hit"
+          : enemy.lastShotTime && now - enemy.lastShotTime < 260
+            ? "attack"
+            : "move";
 
       // 仅应用轻微的身体起伏（不旋转）
       const bodyBounce = this.animSystem.getEnemyBodyBounce(enemy.type);
       const drawX = enemy.x;
       const drawY = enemy.y + bodyBounce * 0.5; // 减小上下移动幅度
+
+      this.drawIsoShadow(enemy.x, enemy.y + enemy.radius * 0.56, enemy.radius * 0.92, enemy.radius * 0.26, 0.36);
 
       // 渲染带动画的敌人精灵（手脚会动）
       animatedSpriteRenderer.renderAnimatedEnemy(
@@ -1863,7 +1957,8 @@ export class GameEngine {
         drawY,
         enemy.type,
         animTime,
-        4 // 像素大小
+        5,
+        enemyState
       );
 
       // 冰冻特效：蓝色染色 + 飘落雪花（范围与敌人大小一致）
@@ -1937,6 +2032,39 @@ export class GameEngine {
 
       this.ctx.restore();
     }
+
+    this.renderEnemyDeathAnimations();
+  }
+
+  private renderEnemyDeathAnimations(): void {
+    const now = Date.now();
+    const animTime = this.animSystem.getTime();
+    const duration = 280;
+
+    for (let i = this.enemyDeathAnimations.length - 1; i >= 0; i--) {
+      const death = this.enemyDeathAnimations[i];
+      const age = now - death.startedAt;
+
+      if (age > duration) {
+        this.enemyDeathAnimations.splice(i, 1);
+        continue;
+      }
+
+      const progress = age / duration;
+      this.ctx.save();
+      this.ctx.globalAlpha = Math.max(0, 1 - progress);
+      this.ctx.translate(0, progress * 6);
+      animatedSpriteRenderer.renderAnimatedEnemy(
+        this.ctx,
+        death.x,
+        death.y,
+        death.type,
+        animTime,
+        5,
+        "death"
+      );
+      this.ctx.restore();
+    }
   }
 
   /**
@@ -1984,6 +2112,7 @@ export class GameEngine {
     const drawY = boss.y;
 
     // 移动到Boss位置并应用缩放
+    this.ctx.save();
     this.ctx.translate(drawX, drawY);
     this.ctx.scale(totalScale, totalScale);
     this.ctx.translate(-drawX, -drawY); // 保持原点
@@ -2051,8 +2180,8 @@ export class GameEngine {
       this.ctx.fillRect(align(boss.x - drawR), align(boss.y - drawR), drawR * 2, drawR * 2);
     }
 
-    // 恢复变换矩阵（在血条渲染之前）
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // 恢复到相机坐标系（在血条渲染之前）
+    this.ctx.restore();
 
     // 6. Boss血条
     const barWidth = r * 3;
@@ -2148,10 +2277,14 @@ export class GameEngine {
     const timeSinceLastShot = now - this.lastShotTime;
     const hasRecoil = timeSinceLastShot < 100; // 射击后100ms内有后坐力
     const recoil = hasRecoil ? this.animSystem.getPlayerShootRecoil() : { x: 0, y: 0 };
+    const playerState: EntityAnimationState =
+      now - this.lastDamageTime < 180 ? "hit" : hasRecoil ? "attack" : isMoving ? "move" : "idle";
 
     // 应用变换到玩家位置
     const drawX = this.player.x + recoil.x;
     const drawY = this.player.y + recoil.y + bounceY;
+
+    this.drawIsoShadow(this.player.x, this.player.y + this.player.radius * 0.56, this.player.radius * 0.9, this.player.radius * 0.24, 0.36);
 
     // 应用呼吸缩放
     const finalScale = breathingScale;
@@ -2160,6 +2293,7 @@ export class GameEngine {
     const animTime = this.animSystem.getTime();
 
     // 临时应用缩放变换
+    this.ctx.save();
     this.ctx.translate(drawX, drawY);
     this.ctx.scale(finalScale, finalScale);
     this.ctx.translate(-drawX, -drawY);
@@ -2171,11 +2305,11 @@ export class GameEngine {
       drawY,
       animTime,
       isMoving,
-      4 // 像素大小
+      4,
+      playerState
     );
 
-    // 恢复变换矩阵
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0); // 重置为单位矩阵
+    this.ctx.restore();
 
     // 护盾效果 - 像素风格圆形边框（带呼吸动画）
     if (this.player.shield > 0) {
@@ -2222,7 +2356,9 @@ export class GameEngine {
    * 清理资源 (修复: 完善资源清理，防止内存泄漏)
    */
   public destroy(): void {
-    console.log('[GameEngine] Destroying game engine...');
+    if (import.meta.env.DEV) {
+      console.log('[GameEngine] Destroying game engine...');
+    }
 
     // 停止游戏循环
     this.stop();
@@ -2255,6 +2391,8 @@ export class GameEngine {
     this.onStatsUpdate = undefined;
     this.onError = undefined;
 
-    console.log('[GameEngine] Game engine destroyed successfully');
+    if (import.meta.env.DEV) {
+      console.log('[GameEngine] Game engine destroyed successfully');
+    }
   }
 }

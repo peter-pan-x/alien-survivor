@@ -20,9 +20,10 @@ export class BossSystem {
    * 检查是否应该在当前等级生成Boss
    * 每10级出现一次，第一次在10级
    */
-  public shouldSpawnBoss(playerLevel: number): boolean {
-    // 每10级出现一次
-    if (playerLevel % 10 !== 0) {
+  public shouldSpawnBoss(playerLevel: number, frequencyMultiplier: number = 1): boolean {
+    const interval = this.getBossInterval(frequencyMultiplier);
+
+    if (playerLevel % interval !== 0) {
       return false;
     }
 
@@ -31,8 +32,7 @@ export class BossSystem {
       return false;
     }
 
-    // 第一次在10级出现
-    return playerLevel >= 10;
+    return playerLevel >= interval;
   }
 
   /**
@@ -43,14 +43,15 @@ export class BossSystem {
     playerX: number,
     playerY: number,
     canvasWidth: number,
-    canvasHeight: number
+    canvasHeight: number,
+    frequencyMultiplier: number = 1
   ): Boss | null {
-    if (!this.shouldSpawnBoss(playerLevel)) {
+    if (!this.shouldSpawnBoss(playerLevel, frequencyMultiplier)) {
       return null;
     }
 
     // 确定Boss类型
-    const bossType = this.getBossTypeForLevel(playerLevel);
+    const bossType = this.getBossTypeForLevel(playerLevel, frequencyMultiplier);
     if (!bossType) {
       return null;
     }
@@ -60,22 +61,31 @@ export class BossSystem {
     this.currentBoss = boss;
     this.spawnedBossLevels.add(playerLevel);
 
-    console.log(`[BossSystem] Boss spawned at level ${playerLevel}: ${BOSS_TYPES[bossType].name}`);
+    if (import.meta.env.DEV) {
+      console.log(`[BossSystem] Boss spawned at level ${playerLevel}: ${BOSS_TYPES[bossType].name}`);
+    }
     return boss;
   }
 
   /**
    * 根据等级获取Boss类型
    */
-  private getBossTypeForLevel(level: number): BossType | null {
-    if (level === 10) return "level10";
-    if (level === 20) return "level20";
-    if (level === 30) return "level30";
-    if (level === 40) return "level40";
-    if (level === 50) return "level50";
+  private getBossTypeForLevel(level: number, frequencyMultiplier: number = 1): BossType | null {
+    const interval = this.getBossInterval(frequencyMultiplier);
+    const normalizedLevel = Math.ceil(level / interval) * 10;
+
+    if (normalizedLevel === 10) return "level10";
+    if (normalizedLevel === 20) return "level20";
+    if (normalizedLevel === 30) return "level30";
+    if (normalizedLevel === 40) return "level40";
+    if (normalizedLevel === 50) return "level50";
     // 50级以后循环使用level50
-    if (level >= 60 && level % 10 === 0) return "level50";
+    if (normalizedLevel >= 60 && normalizedLevel % 10 === 0) return "level50";
     return null;
+  }
+
+  private getBossInterval(frequencyMultiplier: number): number {
+    return Math.max(3, Math.round(10 * frequencyMultiplier));
   }
 
   /**
@@ -206,7 +216,9 @@ export class BossSystem {
     boss.jumpTargetX = Math.max(boss.radius, Math.min(canvasWidth - boss.radius, boss.jumpTargetX));
     boss.jumpTargetY = Math.max(boss.radius, Math.min(canvasHeight - boss.radius, boss.jumpTargetY));
     
-    console.log(`[BossSystem] Boss jumping to (${boss.jumpTargetX}, ${boss.jumpTargetY})`);
+    if (import.meta.env.DEV) {
+      console.log(`[BossSystem] Boss jumping to (${boss.jumpTargetX}, ${boss.jumpTargetY})`);
+    }
   }
   
   /**
@@ -237,7 +249,9 @@ export class BossSystem {
       boss.jumpTargetX = undefined;
       boss.jumpTargetY = undefined;
       
-      console.log(`[BossSystem] Boss jump completed`);
+      if (import.meta.env.DEV) {
+        console.log(`[BossSystem] Boss jump completed`);
+      }
     }
   }
   
@@ -255,4 +269,3 @@ export class BossSystem {
     return this.skillSystem;
   }
 }
-

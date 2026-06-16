@@ -13,6 +13,12 @@ export interface SkillEffect {
   icon?: string;
   // 稀有度：用于控制出现概率
   rarity?: "common" | "rare" | "epic";
+  level?: number;
+  maxLevel?: number;
+  tags?: string[];
+  evolutionRequirements?: string[];
+  evolvesTo?: string;
+  getDescription?: (player?: Player) => string;
   
   /**
    * 应用技能效果到玩家
@@ -114,6 +120,9 @@ export class SkillSystem {
       description: "攻击速度 +15%",
       type: "attack",
       icon: "⚡",
+      maxLevel: 8,
+      tags: ["speed", "attack-rate"],
+      evolvesTo: "overload_arc",
       apply: (player: Player) => {
         player.attackSpeed *= GAME_CONFIG.SKILLS.SPEED_BOOST_MULTIPLIER;
         return true;
@@ -127,6 +136,9 @@ export class SkillSystem {
       description: "攻击范围 +50",
       type: "attack",
       icon: "🎯",
+      maxLevel: 6,
+      tags: ["range"],
+      evolvesTo: "satellite_matrix",
       apply: (player: Player) => {
         player.attackRange += GAME_CONFIG.SKILLS.RANGE_BOOST;
         return true;
@@ -140,6 +152,9 @@ export class SkillSystem {
       description: "子弹数量 +1，伤害 -20%",
       type: "attack",
       icon: "🔫",
+      maxLevel: 9,
+      tags: ["multi", "projectile"],
+      evolvesTo: "frost_burst",
       apply: (player: Player) => {
         player.bulletCount += 1;
         // 每次选择多重射击，伤害降低20%（优化：从30%降低到20%）
@@ -210,6 +225,9 @@ export class SkillSystem {
       description: "最大护盾 +20",
       type: "shield",
       icon: "🛡️",
+      maxLevel: 5,
+      tags: ["shield"],
+      evolvesTo: "reactive_aegis",
       apply: (player: Player) => {
         player.maxShield += GAME_CONFIG.SKILLS.SHIELD_BOOST;
         player.shield = player.maxShield;
@@ -311,6 +329,9 @@ export class SkillSystem {
       type: "special",
       rarity: "rare",
       icon: "🛸",
+      maxLevel: 6,
+      tags: ["orbital", "weapon"],
+      evolvesTo: "satellite_matrix",
       apply: (player: Player) => {
         if (this.weaponAddCallback) {
           this.weaponAddCallback(player, "orbital");
@@ -328,6 +349,9 @@ export class SkillSystem {
       type: "special",
       rarity: "rare",
       icon: "⚡",
+      maxLevel: 6,
+      tags: ["lightning", "weapon"],
+      evolvesTo: "overload_arc",
       apply: (player: Player) => {
         if (this.weaponAddCallback) {
           this.weaponAddCallback(player, "lightning");
@@ -345,6 +369,9 @@ export class SkillSystem {
       type: "special",
       rarity: "rare",
       icon: "🌀",
+      maxLevel: 6,
+      tags: ["field", "weapon"],
+      evolvesTo: "reactive_aegis",
       apply: (player: Player) => {
         if (this.weaponAddCallback) {
           this.weaponAddCallback(player, "field");
@@ -362,6 +389,9 @@ export class SkillSystem {
       description: `敌人死亡后分裂出3颗子弹（升级提升伤害和射程）`,
       type: "special",
       icon: "💥",
+      maxLevel: 6,
+      tags: ["split", "projectile"],
+      evolvesTo: "blast_inferno",
       apply: (player: Player) => {
         if (!player.hasAOEExplosion) {
           // 首次获得：30%攻击力伤害，200距离
@@ -405,6 +435,9 @@ export class SkillSystem {
       type: "attack",
       rarity: "rare",
       icon: "❄️",
+      maxLevel: 6,
+      tags: ["frost", "projectile"],
+      evolvesTo: "frost_burst",
       apply: (player: Player) => {
         if (!player.hasFrostShot) {
           player.hasFrostShot = true;
@@ -427,6 +460,9 @@ export class SkillSystem {
       type: "attack",
       rarity: "rare",
       icon: "🔥",
+      maxLevel: 6,
+      tags: ["flame", "burn"],
+      evolvesTo: "blast_inferno",
       apply: (player: Player) => {
         if (!player.hasFlameAttack) {
           player.hasFlameAttack = true;
@@ -441,6 +477,123 @@ export class SkillSystem {
         return true;
       },
       canSelect: () => true,
+    });
+
+    this.registerEvolutionSkills();
+  }
+
+  private registerEvolutionSkills(): void {
+    this.registerSkill({
+      id: "frost_burst",
+      name: "冰霜弹幕",
+      description: "进化：额外子弹并强化冰冻伤害",
+      type: "attack",
+      rarity: "epic",
+      tags: ["evolution", "frost", "multi"],
+      evolutionRequirements: ["frost_shot", "multi_shot"],
+      getDescription: () => "冰冻射击 + 多重射击进化：子弹+1，冰冻伤害大幅提升。",
+      apply: (player: Player) => {
+        player.bulletCount += 1;
+        player.hasFrostShot = true;
+        player.frostDamageBonus = (player.frostDamageBonus ?? 0.2) + 0.25;
+        player.frostDuration = (player.frostDuration ?? 1000) + 750;
+        player.evolvedSkills = { ...(player.evolvedSkills ?? {}), frost_burst: true };
+        return true;
+      },
+      canSelect: (player: Player) =>
+        !!player.hasFrostShot &&
+        player.bulletCount >= 2 &&
+        !player.evolvedSkills?.frost_burst,
+    });
+
+    this.registerSkill({
+      id: "blast_inferno",
+      name: "燃爆弹",
+      description: "进化：燃烧和分裂子弹互相增幅",
+      type: "attack",
+      rarity: "epic",
+      tags: ["evolution", "flame", "split"],
+      evolutionRequirements: ["flame_attack", "aoe_blast"],
+      getDescription: () => "火焰攻击 + 分裂进化：燃烧更久，分裂弹伤害更高。",
+      apply: (player: Player) => {
+        player.hasFlameAttack = true;
+        player.hasAOEExplosion = true;
+        player.flameDamageBonus = (player.flameDamageBonus ?? 0.2) + 0.2;
+        player.flameBurnDamage = (player.flameBurnDamage ?? 0.1) + 0.12;
+        player.flameBurnDuration = (player.flameBurnDuration ?? 3000) + 1500;
+        player.aoeDamage += 0.25;
+        player.aoeRadius += 80;
+        player.evolvedSkills = { ...(player.evolvedSkills ?? {}), blast_inferno: true };
+        return true;
+      },
+      canSelect: (player: Player) =>
+        !!player.hasFlameAttack &&
+        !!player.hasAOEExplosion &&
+        !player.evolvedSkills?.blast_inferno,
+    });
+
+    this.registerSkill({
+      id: "overload_arc",
+      name: "超载电弧",
+      description: "进化：闪电链触发更频繁",
+      type: "special",
+      rarity: "epic",
+      tags: ["evolution", "lightning"],
+      evolutionRequirements: ["lightning_chain", "speed_boost"],
+      getDescription: () => "闪电链 + 攻速强化进化：攻击速度提升，并追加闪电模块。",
+      apply: (player: Player) => {
+        player.attackSpeed *= 1.25;
+        this.weaponAddCallback?.(player, "lightning");
+        player.evolvedSkills = { ...(player.evolvedSkills ?? {}), overload_arc: true };
+        return true;
+      },
+      canSelect: (player: Player) =>
+        player.weapons.some((weapon) => weapon.type === "lightning") &&
+        player.attackSpeed > GAME_CONFIG.PLAYER.INITIAL_ATTACK_SPEED &&
+        !player.evolvedSkills?.overload_arc,
+    });
+
+    this.registerSkill({
+      id: "satellite_matrix",
+      name: "卫星矩阵",
+      description: "进化：无人机轨道扩大并追加无人机",
+      type: "special",
+      rarity: "epic",
+      tags: ["evolution", "orbital"],
+      evolutionRequirements: ["orbital_drone", "range_boost"],
+      getDescription: () => "轨道无人机 + 射程强化进化：射程+80，并追加无人机。",
+      apply: (player: Player) => {
+        player.attackRange += 80;
+        this.weaponAddCallback?.(player, "orbital");
+        player.evolvedSkills = { ...(player.evolvedSkills ?? {}), satellite_matrix: true };
+        return true;
+      },
+      canSelect: (player: Player) =>
+        player.weapons.some((weapon) => weapon.type === "orbital") &&
+        player.attackRange > GAME_CONFIG.PLAYER.INITIAL_ATTACK_RANGE &&
+        !player.evolvedSkills?.satellite_matrix,
+    });
+
+    this.registerSkill({
+      id: "reactive_aegis",
+      name: "反应护罩",
+      description: "进化：护盾强化守护力场",
+      type: "shield",
+      rarity: "epic",
+      tags: ["evolution", "field", "shield"],
+      evolutionRequirements: ["guardian_field", "shield_boost"],
+      getDescription: () => "守护力场 + 护盾强化进化：护盾+40，并强化力场模块。",
+      apply: (player: Player) => {
+        player.maxShield += 40;
+        player.shield = player.maxShield;
+        this.weaponAddCallback?.(player, "field");
+        player.evolvedSkills = { ...(player.evolvedSkills ?? {}), reactive_aegis: true };
+        return true;
+      },
+      canSelect: (player: Player) =>
+        player.weapons.some((weapon) => weapon.type === "field") &&
+        player.maxShield > 0 &&
+        !player.evolvedSkills?.reactive_aegis,
     });
   }
 
@@ -477,6 +630,10 @@ export class SkillSystem {
 
     try {
       const success = skill.apply(player, level);
+      if (success) {
+        if (!player.skillLevels) player.skillLevels = {};
+        player.skillLevels[skill.id] = (player.skillLevels[skill.id] ?? 0) + 1;
+      }
       // 稀有技能选择一次，则后续同名技能出现概率降低11%
       if (success && skill.rarity === "rare") {
         if (!player.rareSkillSelections) player.rareSkillSelections = {};
@@ -546,14 +703,22 @@ export class SkillSystem {
     
     // 分离特殊技能和普通技能
     const specialSkills: SkillEffect[] = [];
+    const evolutionSkills: SkillEffect[] = [];
     const normalPool: SkillEffect[] = [];
     
     for (const skill of available) {
       if (SkillSystem.SPECIAL_SKILL_RATES[skill.id] !== undefined) {
         specialSkills.push(skill);
+      } else if (skill.tags?.includes("evolution")) {
+        evolutionSkills.push(skill);
       } else {
         normalPool.push(skill);
       }
+    }
+
+    if (evolutionSkills.length > 0) {
+      const randomEvolution = evolutionSkills[Math.floor(Math.random() * evolutionSkills.length)];
+      selected.push(randomEvolution);
     }
     
     // 处理特殊技能：按固定概率决定是否出现
@@ -612,4 +777,3 @@ export class SkillSystem {
 
 // 导出单例实例（也可以每次创建新实例）
 export const skillSystem = new SkillSystem();
-

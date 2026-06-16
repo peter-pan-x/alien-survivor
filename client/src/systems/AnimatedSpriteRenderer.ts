@@ -1,9 +1,10 @@
 /**
- * 动画精灵渲染器 - 让像素角色真正"活"起来
- * 通过动态修改像素精灵的某些部分，实现肢体摆动动画
+ * 动画精灵渲染器 - 代码像素帧版
+ * 用更高密度的像素帧表达 2.5D 异星生物，而不是简单图标。
  */
 
 import { PixelColors } from "../utils/PixelRenderer";
+import type { EntityAnimationState } from "../gameTypes";
 
 export interface AnimatedSpriteFrame {
   pixels: string[][];
@@ -11,338 +12,61 @@ export interface AnimatedSpriteFrame {
 }
 
 export class AnimatedSpriteRenderer {
-  /**
-   * 渲染带动画的敌人精灵
-   * @param ctx Canvas上下文
-   * @param x X坐标
-   * @param y Y坐标
-   * @param enemyType 敌人类型
-   * @param time 动画时间（秒）
-   * @param pixelSize 像素大小
-   */
   public renderAnimatedEnemy(
     ctx: CanvasRenderingContext2D,
     x: number,
     y: number,
     enemyType: string,
     time: number,
-    pixelSize: number = 4
+    pixelSize: number = 3,
+    state: EntityAnimationState = "move"
   ): void {
-    // 获取动画帧
-    const frame = this.getAnimatedFrame(enemyType, time);
-
-    // 计算精灵尺寸
-    const height = frame.pixels.length;
-    const width = frame.pixels[0].length;
-    const offsetX = x - (width * pixelSize) / 2;
-    const offsetY = y - (height * pixelSize) / 2;
-
-    // 渲染每个像素
-    for (let row = 0; row < height; row++) {
-      for (let col = 0; col < width; col++) {
-        const char = frame.pixels[row][col];
-        if (char === ' ') continue; // 跳过空像素
-
-        // 获取颜色
-        const color = frame.colors[char] || '#ffffff';
-        if (color === 'transparent') continue;
-
-        ctx.fillStyle = color;
-        ctx.fillRect(
-          offsetX + col * pixelSize,
-          offsetY + row * pixelSize,
-          pixelSize,
-          pixelSize
-        );
-      }
-    }
+    const frame = this.getAnimatedFrame(enemyType, time, state);
+    this.drawFrame(ctx, frame, x, y, time, pixelSize, state);
   }
 
-  /**
-   * 获取动画帧 - 根据时间动态生成
-   */
-  private getAnimatedFrame(enemyType: string, time: number): AnimatedSpriteFrame {
-    switch (enemyType) {
-      case 'swarm':
-        return this.getSwarmFrame(time);
-      case 'rusher':
-        return this.getRusherFrame(time);
-      case 'shooter':
-        return this.getShooterFrame(time);
-      case 'elite':
-        return this.getEliteFrame(time);
-      case 'spider':
-        return this.getSpiderFrame(time);
-      case 'crab':
-        return this.getCrabFrame(time);
-      case 'bigeye':
-        return this.getBigEyeFrame(time);
-      case 'frog':
-        return this.getFrogFrame(time);
-      default:
-        return this.getSwarmFrame(time);
-    }
-  }
-
-  // ==================== 敌人动画帧 ====================
-
-  /**
-   * Swarm (虫群) - 眼睛快速闪烁
-   */
-  private getSwarmFrame(time: number): AnimatedSpriteFrame {
-    const blink = Math.sin(time * 8) > 0.7; // 快速眨眼
-    const baseSprite = [
-      "  ███  ",
-      blink ? " █   █ " : " █ █ █ ",  // 眼窝闪烁
-      "  ███  ",
-      " ████  ",
-      "█ █ █ █",
-      "  ███  ",
-    ];
-
-    return {
-      pixels: baseSprite.map(row => row.split('')),
-      colors: PixelColors.enemySwarm
-    };
-  }
-
-  /**
-   * Rusher (冲锋龙) - 头部上下摆动，爪子伸缩
-   */
-  private getRusherFrame(time: number): AnimatedSpriteFrame {
-    const headBob = Math.sin(time * 6) > 0.5; // 头部摆动
-    const clawMove = Math.sin(time * 10) > 0; // 爪子移动
-
-    const sprite = headBob ? [
-      "  ███  ",  // 角
-      " ████  ",  // 头部
-      "███████",  // 身体
-      "█ ███ █",
-      "  ███  ",
-      clawMove ? "█   █ " : " █ █ █ ",  // 爪子伸缩
-    ] : [
-      "  ███  ",
-      " ████  ",
-      "███████",
-      "█ ███ █",
-      "  ███  ",
-      clawMove ? " ████ " : " █ █ █ ",
-    ];
-
-    return {
-      pixels: sprite.map(row => row.split('')),
-      colors: PixelColors.enemyRusher
-    };
-  }
-
-  /**
-   * Shooter (射手幽灵) - 眼睛左右移动，身体上下浮动
-   */
-  private getShooterFrame(time: number): AnimatedSpriteFrame {
-    const eyeOffset = Math.sin(time * 3); // 眼睛左右移动
-    const bodyFloat = Math.sin(time * 2); // 身体浮动
-
-    const sprite = bodyFloat > 0 ? [
-      "  ███  ",
-      ` ${eyeOffset > 0 ? ' ████ ' : ' ████ '} `,  // 头部
-      "███████",
-      "███████",
-      "█ ███ █",
-      eyeOffset > 0 ? " ████ " : "█     █",
-    ] : [
-      "  ███  ",
-      " ████  ",
-      "███████",
-      "███████",
-      "█ ███ █",
-      eyeOffset > 0 ? " █   █ " : "█     █",
-    ];
-
-    return {
-      pixels: sprite.map(row => row.split('')),
-      colors: PixelColors.enemyShooter
-    };
-  }
-
-  /**
-   * Elite (精英) - 身体上下起伏，装饰闪烁
-   */
-  private getEliteFrame(time: number): AnimatedSpriteFrame {
-    const bodyPulse = Math.sin(time * 2); // 身体起伏
-    const decorFlash = Math.sin(time * 5) > 0.5; // 装饰闪烁
-
-    const sprite = bodyPulse > 0 ? [
-      "   ███   ",
-      "  █████  ",
-      " ███████ ",
-      "█████████",
-      "█ █████ █",
-      "█ █████ █",
-      "  █████  ",
-      decorFlash ? "█ █ █ ██" : " █ █ █ █",
-    ] : [
-      "   ███   ",
-      "  █████  ",
-      " ███████ ",
-      "█████████",
-      "█ █████ █",
-      "█ █████ █",
-      "  █████  ",
-      decorFlash ? "████████" : " █ █ █ █ ",
-    ];
-
-    return {
-      pixels: sprite.map(row => row.split('')),
-      colors: PixelColors.enemyElite
-    };
-  }
-
-  /**
-   * Spider (蜘蛛) - 8条腿交替爬行
-   */
-  private getSpiderFrame(time: number): AnimatedSpriteFrame {
-    const legPhase = (time * 8) % 4; // 腿部爬行相位
-    const leg1 = Math.floor(legPhase);
-    const leg2 = (leg1 + 2) % 4;
-
-    const legPatterns = [
-      ["x  x  x  x", "x  x  x  x"],  // 相位0
-      [" x x  x x ", " x x  x x "],  // 相位1
-      ["  x x x x ", "  x x x x "],  // 相位2
-      ["x x  x x  ", "x x  x x  "],  // 相位3
-    ];
-
-    const sprite = [
-      legPatterns[leg1][0],
-      "x █o█ x",
-      "  ███  ",
-      "x █o█ x",
-      legPatterns[leg1][1],
-    ];
-
-    return {
-      pixels: sprite.map(row => row.split('')),
-      colors: PixelColors.enemySpider
-    };
-  }
-
-  /**
-   * Crab (螃蟹) - 钳子开合，横向移动
-   */
-  private getCrabFrame(time: number): AnimatedSpriteFrame {
-    const clawOpen = Math.sin(time * 4) > 0; // 钳子开合
-    const sideMove = Math.sin(time * 3); // 横向移动
-
-    const sprite = sideMove > 0 ? [
-      clawOpen ? "X   X" : "x   x",
-      "  ███  ",
-      " █o█o█ ",
-      "███████",
-      clawOpen ? "X   X" : "x   x",
-    ] : [
-      clawOpen ? " X   X " : " x   x ",
-      "  ███  ",
-      " █o█o█ ",
-      "███████",
-      clawOpen ? " X   X " : " x   x ",
-    ];
-
-    return {
-      pixels: sprite.map(row => row.split('')),
-      colors: PixelColors.enemyCrab
-    };
-  }
-
-  /**
-   * BigEye (大眼怪) - 眼珠转动，身体起伏
-   */
-  private getBigEyeFrame(time: number): AnimatedSpriteFrame {
-    const eyeX = Math.sin(time * 2); // 眼珠水平移动
-    const eyeY = Math.sin(time * 3); // 眼珠垂直移动
-    const bodyPulse = Math.sin(time * 1.5); // 身体起伏
-
-    // 根据眼珠位置生成不同的眼睛
-    let leftEye = 'o';
-    let rightEye = 'o';
-
-    if (eyeX < -0.3) { leftEye = '◄'; }
-    else if (eyeX > 0.3) { leftEye = '►'; }
-
-    if (eyeY < -0.3) { leftEye = '▲'; rightEye = '▲'; }
-    else if (eyeY > 0.3) { leftEye = '▼'; rightEye = '▼'; }
-
-    const sprite = bodyPulse > 0 ? [
-      "  ███  ",
-      ` █${leftEye}.${rightEye}█ `,
-      " ████  ",
-      " ████  ",
-      "  ███  ",
-    ] : [
-      "  ███  ",
-      " ████  ",
-      ` █${leftEye}.${rightEye}█ `,
-      " ████  ",
-      "  ███  ",
-    ];
-
-    return {
-      pixels: sprite.map(row => row.split('')),
-      colors: PixelColors.enemyBigEye
-    };
-  }
-
-  /**
-   * Frog (青蛙) - 蹦跳动作，腿部伸展
-   */
-  private getFrogFrame(time: number): AnimatedSpriteFrame {
-    const jumpPhase = (time * 5) % 2; // 跳跃周期
-    const isJumping = jumpPhase > 1;
-
-    const sprite = isJumping ? [
-      "  o o  ",  // 眼睛
-      " ████  ",  // 头部
-      "██████ ",  // 身体
-      "█     █",  // 腿部伸展
-      "X     X",  // 脚部
-    ] : [
-      "  o o  ",
-      " ████  ",
-      "██████ ",
-      "█ █ █ █",  // 腿部收缩
-      " x   x ",
-    ];
-
-    return {
-      pixels: sprite.map(row => row.split('')),
-      colors: PixelColors.enemyFrog
-    };
-  }
-
-  /**
-   * 渲染带动画的玩家精灵（可选功能）
-   */
   public renderAnimatedPlayer(
     ctx: CanvasRenderingContext2D,
     x: number,
     y: number,
     time: number,
     isMoving: boolean,
-    pixelSize: number = 4
+    pixelSize: number = 3,
+    state: EntityAnimationState = isMoving ? "move" : "idle"
   ): void {
-    const frame = this.getPlayerFrame(time, isMoving);
+    const frame = this.getPlayerFrame(time, isMoving, state);
+    this.drawFrame(ctx, frame, x, y, time, pixelSize, state);
+  }
 
+  private drawFrame(
+    ctx: CanvasRenderingContext2D,
+    frame: AnimatedSpriteFrame,
+    x: number,
+    y: number,
+    time: number,
+    pixelSize: number,
+    state: EntityAnimationState
+  ): void {
     const height = frame.pixels.length;
     const width = frame.pixels[0].length;
     const offsetX = x - (width * pixelSize) / 2;
     const offsetY = y - (height * pixelSize) / 2;
+    const transform = this.getStateTransform(state, time);
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.translate(x + transform.offsetX, y + transform.offsetY);
+    ctx.scale(transform.scaleX, transform.scaleY);
+    ctx.translate(-x, -y);
+    ctx.globalAlpha = transform.alpha;
 
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
         const char = frame.pixels[row][col];
-        if (char === ' ') continue;
+        if (char === " ") continue;
 
-        const color = frame.colors[char] || '#ffffff';
-        if (color === 'transparent') continue;
+        const color = frame.colors[char] || "#ffffff";
+        if (color === "transparent") continue;
 
         ctx.fillStyle = color;
         ctx.fillRect(
@@ -353,55 +77,374 @@ export class AnimatedSpriteRenderer {
         );
       }
     }
+
+    ctx.restore();
   }
 
-  /**
-   * 玩家动画帧 - 手臂摆动
-   */
-  private getPlayerFrame(time: number, isMoving: boolean): AnimatedSpriteFrame {
-    if (!isMoving) {
-      // 静止状态
-      const sprite = [
-        "  ███  ",
-        " █ █ █ ",
-        "███████",
-        "█ ███ █",
-        "  ███  ",
-        " █ █ █ ",
-        "█     █",
-      ];
+  private frame(rows: string[], colors: Record<string, string>): AnimatedSpriteFrame {
+    const width = Math.max(...rows.map((row) => row.length));
+    return {
+      pixels: rows.map((row) => row.padEnd(width, " ").split("")),
+      colors,
+    };
+  }
+
+  private getAnimatedFrame(enemyType: string, time: number, state: EntityAnimationState): AnimatedSpriteFrame {
+    switch (enemyType) {
+      case "swarm":
+        return this.getSwarmFrame(time, state);
+      case "rusher":
+        return this.getRusherFrame(time, state);
+      case "shooter":
+        return this.getShooterFrame(time, state);
+      case "elite":
+        return this.getEliteFrame(time, state);
+      case "spider":
+        return this.getSpiderFrame(time, state);
+      case "crab":
+        return this.getCrabFrame(time, state);
+      case "bigeye":
+        return this.getBigEyeFrame(time, state);
+      case "frog":
+        return this.getFrogFrame(time, state);
+      default:
+        return this.getSwarmFrame(time, state);
+    }
+  }
+
+  private getStateTransform(state: EntityAnimationState, time: number): {
+    scaleX: number;
+    scaleY: number;
+    offsetX: number;
+    offsetY: number;
+    alpha: number;
+  } {
+    if (state === "hit") {
       return {
-        pixels: sprite.map(row => row.split('')),
-        colors: PixelColors.player
+        scaleX: 1.16,
+        scaleY: 0.8,
+        offsetX: Math.sin(time * 80) * 2,
+        offsetY: 1,
+        alpha: 0.7 + Math.abs(Math.sin(time * 55)) * 0.3,
       };
     }
 
-    // 移动状态 - 手臂摆动
-    const armSwing = Math.sin(time * 10) > 0;
-    const sprite = armSwing ? [
-      "  ███  ",
-      " █ █ █ ",
-      "███████",
-      "█ ███ █",
-      "  ███  ",
-      "█/   \\█",  // 手臂向外
-      "█     █",
-    ] : [
-      "  ███  ",
-      " █ █ █ ",
-      "███████",
-      "█ ███ █",
-      "  ███  ",
-      " \\   /",  // 手臂向内
-      "█     █",
-    ];
+    if (state === "attack") {
+      return {
+        scaleX: 1.1,
+        scaleY: 0.92,
+        offsetX: Math.sin(time * 24) * 1.5,
+        offsetY: -1,
+        alpha: 1,
+      };
+    }
 
-    return {
-      pixels: sprite.map(row => row.split('')),
-      colors: PixelColors.player
-    };
+    if (state === "idle") {
+      return {
+        scaleX: 1 + Math.sin(time * 3) * 0.02,
+        scaleY: 1 - Math.sin(time * 3) * 0.02,
+        offsetX: 0,
+        offsetY: 0,
+        alpha: 1,
+      };
+    }
+
+    if (state === "death") {
+      return {
+        scaleX: 1.25,
+        scaleY: 0.52,
+        offsetX: 0,
+        offsetY: 5,
+        alpha: 0.45,
+      };
+    }
+
+    return { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0, alpha: 1 };
+  }
+
+  private getSwarmFrame(time: number, state: EntityAnimationState): AnimatedSpriteFrame {
+    const twitch = Math.sin(time * 18) > 0;
+    const blink = state === "hit" || Math.sin(time * 11) > 0.76;
+
+    return this.frame(
+      twitch
+        ? [
+            "  a       a  ",
+            " a  oooo  a ",
+            "  aorrrroa  ",
+            "  orererro  ",
+            " aorrrrroa  ",
+            "a  arrrra  a",
+            "   a a a    ",
+          ]
+        : [
+            " a         a ",
+            "  a oooo a  ",
+            "  aorrrroa  ",
+            blink ? "  orppprro  " : "  orererro  ",
+            " aorrrrroa  ",
+            "   arrrra   ",
+            "  a a   a a ",
+          ],
+      PixelColors.enemySwarm
+    );
+  }
+
+  private getRusherFrame(time: number, state: EntityAnimationState): AnimatedSpriteFrame {
+    const stride = state === "attack" || Math.sin(time * 10) > 0;
+    return this.frame(
+      stride
+        ? [
+            "    a     a   ",
+            "   ayoooooya ",
+            "  aorrrrrrroa",
+            " oorereerrroo",
+            "oorrrrrrrrroo",
+            "  aaorrrroaa ",
+            " a   a  a   a",
+            "a    a  a    ",
+          ]
+        : [
+            "   a       a  ",
+            "  ayoooooya  ",
+            " aorrrrrrroa ",
+            "oorereerrroo ",
+            "oorrrrrrrrroo",
+            "  aaorrrroaa ",
+            "a   a    a   ",
+            "    a    a  a",
+          ],
+      PixelColors.enemyRusher
+    );
+  }
+
+  private getShooterFrame(time: number, state: EntityAnimationState): AnimatedSpriteFrame {
+    const inflate = state === "attack" || Math.sin(time * 5) > 0.15;
+    const pupil = Math.sin(time * 4) > 0 ? "epe" : "eep";
+
+    return this.frame(
+      inflate
+        ? [
+            "    vvvv     ",
+            "  vvmmmmvv   ",
+            " vommmmmmmo  ",
+            `vommm${pupil}mmov`,
+            "vommmcccmmov ",
+            " vmmcccccmmv ",
+            "  vvmmmvvv   ",
+            "   v v v     ",
+          ]
+        : [
+            "     vv      ",
+            "   vvmmvv    ",
+            "  vommmmmo   ",
+            ` vomm${pupil}mmov `,
+            " vmmmcccmmv  ",
+            "  vvmmmvv    ",
+            "   v v v     ",
+          ],
+      PixelColors.enemyShooter
+    );
+  }
+
+  private getEliteFrame(time: number, state: EntityAnimationState): AnimatedSpriteFrame {
+    const flare = state === "attack" || Math.sin(time * 7) > 0.35;
+    const core = flare ? "ceyec" : "cepec";
+
+    return this.frame(
+      [
+        "     y   y     ",
+        "   yyoooooyy   ",
+        "  yorrrrrrroy  ",
+        " yorrrrrrrrrroy ",
+        `yorrr${core}rrroy`,
+        " yorrrrrrrrrroy ",
+        "  yorrrrrrroy  ",
+        "   yyoooooyy   ",
+        flare ? " y  a a a  y  " : "    a a a     ",
+      ],
+      PixelColors.enemyElite
+    );
+  }
+
+  private getSpiderFrame(time: number, state: EntityAnimationState): AnimatedSpriteFrame {
+    const phase = Math.floor((time * (state === "attack" ? 14 : 8)) % 2);
+    return this.frame(
+      phase === 0
+        ? [
+            "a  a     a  a",
+            " a  oooo  a ",
+            "  aovvvvoa  ",
+            " aaovepvoaa ",
+            "  aovvvvoa  ",
+            " a  oooo  a ",
+            "a  a     a  a",
+          ]
+        : [
+            "  a a   a a  ",
+            "a   oooo   a",
+            " aaovvvvoaa ",
+            "  aovepvoa  ",
+            " aaovvvvoaa ",
+            "a   oooo   a",
+            "  a a   a a ",
+          ],
+      PixelColors.enemySpider
+    );
+  }
+
+  private getCrabFrame(time: number, state: EntityAnimationState): AnimatedSpriteFrame {
+    const open = state === "attack" || Math.sin(time * 6) > 0;
+    return this.frame(
+      open
+        ? [
+            "aa         aa",
+            "aao oooo oaa",
+            "  oorrrrroo ",
+            " oorereerrroo",
+            "oorrrrrrrrroo",
+            "  aaorrroaa ",
+            " a  a   a  a",
+          ]
+        : [
+            " a         a ",
+            " aa oooo aa ",
+            "  oorrrrroo ",
+            " oorereerrroo",
+            "oorrrrrrrrroo",
+            "  aaorrroaa ",
+            "a   a   a   a",
+          ],
+      PixelColors.enemyCrab
+    );
+  }
+
+  private getBigEyeFrame(time: number, state: EntityAnimationState): AnimatedSpriteFrame {
+    const pupilLeft = state === "hit" || Math.sin(time * 2.2) < -0.35;
+    const pupil = pupilLeft ? "pww" : "wwp";
+    const lid = Math.sin(time * 5) > 0.88 ? "ccccccc" : `cc${pupil}cc`;
+
+    return this.frame(
+      [
+        "    coooc    ",
+        "  coommmmooc ",
+        " coomccccmooc",
+        `coom${lid}mooc`,
+        "coomccccmooc ",
+        " coommmmmmooc",
+        "  ccoommocc  ",
+        "   a  a  a   ",
+      ],
+      PixelColors.enemyBigEye
+    );
+  }
+
+  private getFrogFrame(time: number, state: EntityAnimationState): AnimatedSpriteFrame {
+    const jump = state === "attack" || Math.sin(time * 7) > 0.45;
+    return this.frame(
+      jump
+        ? [
+            "   g     g   ",
+            "  gegooogeg  ",
+            " googggggoog ",
+            " goggeegggog ",
+            "  oogggggoo  ",
+            " a  gggg  a ",
+            "a         a  ",
+          ]
+        : [
+            "  g       g  ",
+            " gegooogeg  ",
+            "googgggggoog",
+            "goggeegggog ",
+            " ooggggggoo ",
+            "  a gggg a  ",
+            " a  a  a  a ",
+          ],
+      PixelColors.enemyFrog
+    );
+  }
+
+  private getPlayerFrame(time: number, isMoving: boolean, state: EntityAnimationState): AnimatedSpriteFrame {
+    if (state === "hit") {
+      return this.frame(
+        [
+          "    oooo     ",
+          "  oobbbboo   ",
+          " obcwwccbo   ",
+          " obcpcpcbo   ",
+          "  obbbbbbo   ",
+          " oopmmmboo   ",
+          "o   mmmb  p  ",
+          "   oammao    ",
+          "  aa    aa   ",
+        ],
+        PixelColors.player
+      );
+    }
+
+    if (state === "attack") {
+      return this.frame(
+        [
+          "    oooo     ",
+          "  oobbbboo   ",
+          " obcwwccbo   ",
+          " obccccdbo   ",
+          "  obbbbbbo pp",
+          " oopmmmbo pcp",
+          "o   mmmb  pp ",
+          "   oammao    ",
+          "  aa    aa   ",
+        ],
+        PixelColors.player
+      );
+    }
+
+    if (!isMoving) {
+      return this.frame(
+        [
+          "    oooo     ",
+          "  oobbbboo   ",
+          " obcwwccbo   ",
+          " obccccdbo   ",
+          "  obbbbbbo   ",
+          "  opmmmmpo   ",
+          "  o mmmm o   ",
+          "   oammao    ",
+          "   aa  aa    ",
+        ],
+        PixelColors.player
+      );
+    }
+
+    const stride = Math.sin(time * 10) > 0;
+    return this.frame(
+      stride
+        ? [
+            "    oooo     ",
+            "  oobbbboo   ",
+            " obcwwccbo   ",
+            " obccccdbo   ",
+            "  obbbbbbo   ",
+            "oopmmmmpo    ",
+            "   mmmm o    ",
+            "  oa m ao    ",
+            " aa      aa  ",
+          ]
+        : [
+            "    oooo     ",
+            "  oobbbboo   ",
+            " obcwwccbo   ",
+            " obccccdbo   ",
+            "  obbbbbbo   ",
+            "   opmmmmpoo ",
+            "   o mmmm    ",
+            "   oa m ao   ",
+            "  aa      aa ",
+          ],
+      PixelColors.player
+    );
   }
 }
 
-// 导出单例
 export const animatedSpriteRenderer = new AnimatedSpriteRenderer();

@@ -1,18 +1,14 @@
-/**
- * 像素风格UI组件
- * 8-bit/16-bit 复古游戏风格
- */
-
-import { GameStats, GameState } from "../gameTypes";
+import { useMemo, useState } from "react";
+import { ActiveWeapon, GameMode, GameState, GameStats, WeaponType } from "../gameTypes";
 import { GAME_CONFIG } from "../gameConfig";
 import type { SkillEffect } from "../systems/SkillSystem";
 import type { DailyChallenge } from "../systems/DailyChallengeSystem";
 import { AchievementsPanel } from "./AchievementsPanel";
 import type { Achievement, AchievementProgress } from "../systems/AchievementSystem";
-import { useState } from "react";
 
 interface PixelUIProps {
   gameState: GameState;
+  gameMode: GameMode;
   stats: GameStats;
   player: {
     health: number;
@@ -21,400 +17,289 @@ interface PixelUIProps {
     maxShield: number;
     level: number;
     exp: number;
-    lives: number; // 新增
-    maxLives: number; // 新增
+    lives: number;
+    maxLives: number;
+    bulletCount: number;
+    hasFrostShot?: boolean;
+    hasFlameAttack?: boolean;
+    hasPierce?: boolean;
+    critChance?: number;
+    weapons?: Pick<ActiveWeapon, "type" | "level">[];
   };
   skillOptions: SkillEffect[];
   isNewRecord: boolean;
-  onStartGame: () => void;
+  onStartGame: (mode: GameMode) => void;
+  onResume: () => void;
   onSelectSkill: (skill: SkillEffect) => void;
   onRestart: () => void;
-  dailyChallenge: DailyChallenge | null; // 新增：每日挑战信息
-  achievements?: Achievement[]; // 新增：成就列表
-  achievementProgress?: Map<string, AchievementProgress>; // 新增：成就进度
+  dailyChallenge: DailyChallenge | null;
+  dailyBestScore: number;
+  achievements?: Achievement[];
+  achievementProgress?: Map<string, AchievementProgress>;
 }
 
-/**
- * 像素风格图标组件（预留用于未来扩展）
- */
-function _PixelIcon({ type, size = 32 }: { type: string; size?: number }) {
-  const iconStyle: React.CSSProperties = {
-    width: size,
-    height: size,
-    fontSize: `${size}px`,
-    lineHeight: `${size}px`,
-    display: 'inline-block',
-    textAlign: 'center',
-  };
-
-  // 使用emoji作为像素风格图标（实际项目中可以用SVG或图片）
-  const icons: Record<string, string> = {
-    hp: '💀',
-    atk: '🐉',
-    mag: '👻',
-    shield: '🛡️',
-    exp: '⭐',
-    level: '⬆️',
-    score: '🏆',
-    time: '⏱️',
-    kills: '💀',
-  };
-
-  return (
-    <span style={iconStyle} className="pixel-icon">
-      {icons[type.toLowerCase()] || '❓'}
-    </span>
-  );
+function formatTime(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, "0")}`;
 }
 
-/**
- * 像素风格进度条
- */
-function PixelProgressBar({
-  value,
-  max,
-  type = 'health',
-  label,
-}: {
-  value: number;
-  max: number;
-  type?: 'health' | 'shield' | 'exp';
-  label?: string;
-}) {
-  const percentage = Math.max(0, Math.min(100, (value / max) * 100));
-
-  return (
-    <div style={{ marginBottom: '8px' }}>
-      {label && (
-        <div className="pixel-label" style={{ marginBottom: '4px' }}>
-          {label}
-        </div>
-      )}
-      <div
-        className="pixel-progress"
-        style={{
-          position: 'relative',
-          height: '20px',
-          background: '#1a202c',
-          border: '2px solid #4a5568',
-          imageRendering: 'pixelated' as any,
-        }}
-      >
-        <div
-          className={`pixel-progress-bar ${type}`}
-          style={{
-            width: `${percentage}%`,
-            height: '100%',
-            borderRight: '2px solid #1a202c',
-            imageRendering: 'pixelated' as any,
-            background: type === 'health'
-              ? 'linear-gradient(to bottom, #f56565 0%, #e53e3e 50%, #c53030 50%, #9b2c2c 100%)'
-              : type === 'shield'
-                ? 'linear-gradient(to bottom, #4299e1 0%, #3182ce 50%, #2c5282 50%, #2a4365 100%)'
-                : 'linear-gradient(to bottom, #fbbf24 0%, #f59e0b 50%, #d97706 50%, #b45309 100%)',
-          }}
-        />
-        <div
-          className="pixel-text"
-          style={{
-            position: 'absolute',
-            top: '2px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            fontSize: '12px',
-            lineHeight: '16px',
-            pointerEvents: 'none',
-          }}
-        >
-          {Math.floor(value)}/{Math.floor(max)}
-        </div>
-      </div>
-    </div>
-  );
+function getExpNeeded(level: number): number {
+  const baseKills = GAME_CONFIG.LEVELING.BASE_KILLS_FOR_FIRST_LEVEL ?? 5;
+  const baseExp = GAME_CONFIG.LEVELING.EXP_PER_KILL * baseKills;
+  const growth = GAME_CONFIG.LEVELING.GROWTH_RATE ?? 1.33;
+  return Math.ceil(baseExp * Math.pow(growth, Math.max(0, level - 1)));
 }
 
-/**
- * 像素风格按钮
- */
+function getRarityLabel(skill: SkillEffect): string {
+  if (skill.rarity === "epic") return "EPIC";
+  if (skill.rarity === "rare") return "RARE";
+  return "CORE";
+}
+
+function getSkillGlyph(skill: SkillEffect): string {
+  if (skill.id.includes("frost")) return "FR";
+  if (skill.id.includes("flame")) return "FL";
+  if (skill.id.includes("lightning")) return "LX";
+  if (skill.id.includes("shield")) return "SH";
+  if (skill.id.includes("critical")) return "CR";
+  if (skill.id.includes("speed")) return "SP";
+  if (skill.id.includes("range")) return "RG";
+  if (skill.id.includes("orbital")) return "OD";
+  return skill.type.slice(0, 2).toUpperCase();
+}
+
+function getEvolutionLabel(skill: SkillEffect): string | null {
+  if (skill.tags?.includes("evolution")) return "EVOLUTION READY";
+  if (skill.evolvesTo) return `EVOLVES -> ${skill.evolvesTo.replace(/_/g, " ").toUpperCase()}`;
+  return null;
+}
+
+function getWeaponLabel(type: WeaponType): string {
+  if (type === "orbital") return "OD";
+  if (type === "lightning") return "LX";
+  return "BF";
+}
+
+function getHudSlots(player: PixelUIProps["player"]) {
+  const slots = [
+    {
+      id: "rifle",
+      label: "AR",
+      value: `x${Math.max(1, player.bulletCount)}`,
+      active: true,
+      tone: "cyan",
+    },
+  ];
+
+  for (const weapon of player.weapons ?? []) {
+    slots.push({
+      id: weapon.type,
+      label: getWeaponLabel(weapon.type),
+      value: `Lv${weapon.level}`,
+      active: true,
+      tone: weapon.type === "lightning" ? "yellow" : weapon.type === "field" ? "green" : "cyan",
+    });
+  }
+
+  if (player.hasFrostShot) {
+    slots.push({ id: "frost", label: "FR", value: "ICE", active: true, tone: "cyan" });
+  }
+  if (player.hasFlameAttack) {
+    slots.push({ id: "flame", label: "FL", value: "HOT", active: true, tone: "orange" });
+  }
+  if (player.hasPierce) {
+    slots.push({ id: "pierce", label: "PC", value: "PEN", active: true, tone: "yellow" });
+  }
+  if ((player.critChance ?? 0) > 0) {
+    slots.push({ id: "crit", label: "CR", value: `${Math.round((player.critChance ?? 0) * 100)}%`, active: true, tone: "orange" });
+  }
+
+  while (slots.length < 5) {
+    slots.push({
+      id: `empty-${slots.length}`,
+      label: "--",
+      value: "LOCK",
+      active: false,
+      tone: "muted",
+    });
+  }
+
+  return slots.slice(0, 5);
+}
+
 function PixelButton({
   children,
   onClick,
-  variant = 'primary',
-  size = 'normal',
-  disabled = false,
+  tone = "primary",
 }: {
   children: React.ReactNode;
   onClick: () => void;
-  variant?: 'primary' | 'secondary' | 'danger';
-  size?: 'small' | 'normal' | 'large';
-  disabled?: boolean;
+  tone?: "primary" | "secondary" | "danger";
 }) {
-  const sizeStyles = {
-    small: { padding: '8px 16px', fontSize: '12px' },
-    normal: { padding: '12px 24px', fontSize: '16px' },
-    large: { padding: '16px 32px', fontSize: '20px' },
-  };
-
-  const variantStyles = {
-    primary: { background: '#4a5568', borderColor: '#2d3748 #1a202c #1a202c #2d3748' },
-    secondary: { background: '#2d3748', borderColor: '#4a5568 #1a202c #1a202c #4a5568' },
-    danger: { background: '#742a2a', borderColor: '#c53030 #9b2c2c #9b2c2c #c53030' },
-  };
-
   return (
-    <button
-      className={`pixel-button ${disabled ? 'pixel-disabled' : ''}`}
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        ...sizeStyles[size],
-        ...variantStyles[variant],
-        borderWidth: '3px',
-        borderStyle: 'solid',
-      }}
-    >
+    <button className={`pixelx-button pixelx-button-${tone}`} onClick={onClick}>
       {children}
     </button>
   );
 }
 
-/**
- * 像素风格主菜单
- */
-function PixelMainMenu({
+function Meter({
+  value,
+  max,
+  tone,
+  label,
+}: {
+  value: number;
+  max: number;
+  tone: "hp" | "shield" | "xp";
+  label: string;
+}) {
+  const percentage = Math.max(0, Math.min(100, max > 0 ? (value / max) * 100 : 0));
+
+  return (
+    <div className="pixelx-meter-wrap">
+      <div className="pixelx-meter-label">
+        <span>{label}</span>
+        <span>{Math.floor(value)}/{Math.floor(max)}</span>
+      </div>
+      <div className={`pixelx-meter pixelx-meter-${tone}`}>
+        <div style={{ width: `${percentage}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function ModeCard({
+  mode,
+  active,
+  title,
+  meta,
+  body,
+  onClick,
+}: {
+  mode: GameMode;
+  active: boolean;
+  title: string;
+  meta: string;
+  body: string;
+  onClick: (mode: GameMode) => void;
+}) {
+  return (
+    <button
+      className={`pixelx-mode-card ${active ? "is-active" : ""}`}
+      onClick={() => onClick(mode)}
+    >
+      <span className="pixelx-mode-meta">{meta}</span>
+      <strong>{title}</strong>
+      <span>{body}</span>
+    </button>
+  );
+}
+
+function MainMenu({
   stats,
-  onStartGame,
+  gameMode,
   dailyChallenge,
+  dailyBestScore,
   achievements,
   achievementProgress,
+  onStartGame,
 }: {
   stats: GameStats;
-  onStartGame: () => void;
+  gameMode: GameMode;
   dailyChallenge: DailyChallenge | null;
+  dailyBestScore: number;
   achievements?: Achievement[];
   achievementProgress?: Map<string, AchievementProgress>;
+  onStartGame: (mode: GameMode) => void;
 }) {
-  // 检测移动端
-  const isMobile = window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-  // 成就面板状态
+  const [selectedMode, setSelectedMode] = useState<GameMode>(gameMode);
   const [showAchievements, setShowAchievements] = useState(false);
 
-  // 全屏切换（兼容各种浏览器）
-  const toggleFullscreen = async () => {
-    const doc = document as any;
-    const docEl = document.documentElement as any;
-    
-    try {
-      const isFullscreen = doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement;
-      
-      if (!isFullscreen) {
-        // 进入全屏
-        if (docEl.requestFullscreen) {
-          await docEl.requestFullscreen();
-        } else if (docEl.webkitRequestFullscreen) {
-          await docEl.webkitRequestFullscreen(); // Safari/iOS
-        } else if (docEl.mozRequestFullScreen) {
-          await docEl.mozRequestFullScreen(); // Firefox
-        } else if (docEl.msRequestFullscreen) {
-          await docEl.msRequestFullscreen(); // IE/Edge
-        }
-      } else {
-        // 退出全屏
-        if (doc.exitFullscreen) {
-          await doc.exitFullscreen();
-        } else if (doc.webkitExitFullscreen) {
-          await doc.webkitExitFullscreen();
-        } else if (doc.mozCancelFullScreen) {
-          await doc.mozCancelFullScreen();
-        } else if (doc.msExitFullscreen) {
-          await doc.msExitFullscreen();
-        }
-      }
-    } catch (e) {
-      console.log('Fullscreen error:', e);
-    }
-  };
-  
   return (
-    <div
-      className="pixel-bg"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: isMobile ? '16px' : '32px',
-        zIndex: 50,
-        padding: isMobile ? '16px' : '0',
-        overflow: 'auto',
-      }}
-    >
-      {/* 全屏按钮 - 移动端显示 */}
-      {isMobile && (
-        <button
-          onClick={toggleFullscreen}
-          style={{
-            position: 'absolute',
-            top: '12px',
-            right: '12px',
-            padding: '8px 12px',
-            background: '#2d3748',
-            border: '2px solid #4a5568',
-            color: '#fff',
-            fontSize: '12px',
-            cursor: 'pointer',
-            zIndex: 100,
-          }}
-        >
-          ⛶ 全屏
-        </button>
-      )}
-
-      {/* 标题 */}
-      <div style={{ textAlign: 'center' }}>
-        <h1 className="pixel-title pixel-title-large" style={{ fontSize: isMobile ? '28px' : '48px' }}>异星幸存者</h1>
-        <p className="pixel-text" style={{ fontSize: isMobile ? '14px' : '18px', marginTop: '8px' }}>
-          ALIEN SURVIVOR
-        </p>
-      </div>
-
-      {/* 最高分 */}
-      {stats.highScore > 0 && (
-        <div className="pixel-panel" style={{ textAlign: 'center', minWidth: isMobile ? '200px' : '300px', padding: isMobile ? '12px' : '16px' }}>
-          <div className="pixel-label" style={{ marginBottom: '8px', fontSize: isMobile ? '12px' : '14px' }}>
-            HIGH SCORE
+    <div className="pixelx-screen pixelx-menu">
+      <div className="pixelx-starfield" />
+      <section className="pixelx-menu-shell">
+        <div className="pixelx-brand">
+          <div className="pixelx-orbit-mark">
+            <span />
+            <i />
           </div>
-          <div className="pixel-number" style={{ fontSize: isMobile ? '24px' : '32px' }}>
-            {stats.highScore.toLocaleString()}
+          <div>
+            <h1>异星幸存者</h1>
+            <p>ALIEN SURVIVOR</p>
           </div>
         </div>
-      )}
 
-      {/* 每日挑战卡片（新增） */}
-      {dailyChallenge && (
-        <div
-          className="pixel-panel"
-          style={{
-            textAlign: 'center',
-            minWidth: isMobile ? '280px' : '400px',
-            padding: isMobile ? '12px' : '16px',
-            border: '2px solid #fbbf24',
-            background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.1) 100%)',
-          }}
-        >
-          {/* 挑战标题 */}
-          <div className="pixel-label" style={{ marginBottom: '8px', fontSize: isMobile ? '12px' : '14px', color: '#fbbf24' }}>
-            ⚡ 今日挑战
+        <div className="pixelx-menu-grid">
+          <div className="pixelx-briefing pixelx-panel">
+            <span className="pixelx-kicker">MISSION FEED</span>
+            <h2>Hold the alien night.</h2>
+            <p>
+              Auto-fire, harvest XP, evolve your kit, and survive the pressure waves.
+            </p>
+            <div className="pixelx-stat-row">
+              <span>{selectedMode === "daily" ? "TODAY BEST" : "BEST"}</span>
+              <strong>
+                {(selectedMode === "daily" ? dailyBestScore : stats.highScore).toLocaleString()}
+              </strong>
+            </div>
+            <div className="pixelx-stat-row">
+              <span>MODE</span>
+              <strong>{selectedMode === "daily" ? "DAILY" : "CLASSIC"}</strong>
+            </div>
           </div>
 
-          {/* 挑战名称 */}
-          <div
-            className="pixel-text"
-            style={{
-              fontSize: isMobile ? '16px' : '20px',
-              color: '#fcd34d',
-              marginBottom: '8px',
-              fontWeight: 'bold'
-            }}
-          >
-            {dailyChallenge.name}
+          <div className="pixelx-panel pixelx-mode-stack">
+            <ModeCard
+              mode="classic"
+              active={selectedMode === "classic"}
+              title="Classic Run"
+              meta="SURVIVAL"
+              body="Stable scaling, long-form build crafting."
+              onClick={setSelectedMode}
+            />
+            <ModeCard
+              mode="daily"
+              active={selectedMode === "daily"}
+              title={dailyChallenge?.name ?? "Daily Signal"}
+              meta="TODAY"
+              body={dailyChallenge?.description ?? "Seeded modifiers for today's leaderboard."}
+              onClick={setSelectedMode}
+            />
           </div>
 
-          {/* 挑战描述 */}
-          <div className="pixel-text" style={{ fontSize: isMobile ? '11px' : '13px', marginBottom: '12px', lineHeight: '1.4' }}>
-            {dailyChallenge.description}
-          </div>
-
-          {/* 挑战修正列表 */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
-            {dailyChallenge.modifiers.map((modifier, index) => (
-              <div
-                key={index}
-                className="pixel-text"
-                style={{
-                  fontSize: isMobile ? '10px' : '12px',
-                  color: '#a0aec0',
-                  padding: '4px 8px',
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  borderRadius: '4px',
-                }}
-              >
-                • {modifier.description}
+          {dailyChallenge && (
+            <div className="pixelx-panel pixelx-challenge">
+              <span className="pixelx-kicker">DAILY MODIFIERS</span>
+              <div className="pixelx-mod-list">
+                {dailyChallenge.modifiers.map((modifier, index) => (
+                  <span key={`${modifier.type}-${index}`}>{modifier.description}</span>
+                ))}
               </div>
-            ))}
-          </div>
-
-          {/* 奖励倍数 */}
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', fontSize: isMobile ? '11px' : '13px' }}>
-            {dailyChallenge.rewards.scoreMultiplier !== 1.0 && (
-              <div className="pixel-text" style={{ color: '#68d391' }}>
-                分数 ×{dailyChallenge.rewards.scoreMultiplier.toFixed(1)}
+              <div className="pixelx-rewards">
+                <span>SCORE x{dailyChallenge.rewards.scoreMultiplier.toFixed(1)}</span>
+                <span>XP x{dailyChallenge.rewards.expMultiplier.toFixed(1)}</span>
               </div>
-            )}
-            {dailyChallenge.rewards.expMultiplier !== 1.0 && (
-              <div className="pixel-text" style={{ color: '#63b3ed' }}>
-                经验 ×{dailyChallenge.rewards.expMultiplier.toFixed(1)}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 开始按钮 */}
-      <PixelButton onClick={onStartGame} size={isMobile ? 'normal' : 'large'} variant="primary">
-        ▶ START GAME
-      </PixelButton>
-
-      {/* 成就按钮（新增） */}
-      {achievements && achievementProgress && (
-        <PixelButton
-          onClick={() => setShowAchievements(true)}
-          size={isMobile ? 'normal' : 'large'}
-          variant="secondary"
-        >
-          🏆 ACHIEVEMENTS
-        </PixelButton>
-      )}
-
-      {/* 说明 - 移动端简化 */}
-      <div className="pixel-panel" style={{ maxWidth: isMobile ? '280px' : '400px', textAlign: 'center', padding: isMobile ? '12px' : '16px' }}>
-        <div className="pixel-label" style={{ marginBottom: '8px', fontSize: isMobile ? '12px' : '14px' }}>
-          CONTROLS
-        </div>
-        <div className="pixel-text" style={{ fontSize: isMobile ? '11px' : '14px', lineHeight: '1.6' }}>
-          {isMobile ? (
-            <>
-              <div>左侧滑动 - 移动</div>
-              <div>自动瞄准射击</div>
-            </>
-          ) : (
-            <>
-              <div>WASD / ARROWS - MOVE</div>
-              <div>MOUSE - AIM</div>
-              <div>ESC - PAUSE</div>
-            </>
+            </div>
           )}
         </div>
-      </div>
 
-      {/* 作者署名 */}
-      <div
-        className="pixel-text"
-        style={{
-          fontSize: '12px',
-          color: '#718096',
-          textAlign: 'center',
-          marginTop: isMobile ? '8px' : '16px',
-          fontStyle: 'italic'
-        }}
-      >
-        AGI-彼得潘
-      </div>
+        <div className="pixelx-actions">
+          <PixelButton onClick={() => onStartGame(selectedMode)}>START RUN</PixelButton>
+          {achievements && achievementProgress && (
+            <PixelButton tone="secondary" onClick={() => setShowAchievements(true)}>
+              ACHIEVEMENTS
+            </PixelButton>
+          )}
+        </div>
 
-      {/* 成就面��（新增） */}
+        <div className="pixelx-controls">
+          <span>WASD / ARROWS MOVE</span>
+          <span>AUTO AIM FIRE</span>
+          <span>ESC PAUSE</span>
+        </div>
+      </section>
+
       {showAchievements && achievements && achievementProgress && (
         <AchievementsPanel
           achievements={achievements}
@@ -426,463 +311,237 @@ function PixelMainMenu({
   );
 }
 
-/**
- * 像素风格升级界面
- */
-function PixelLevelUp({
+function HUD({
+  player,
+  stats,
+  gameMode,
+}: {
+  player: PixelUIProps["player"];
+  stats: GameStats;
+  gameMode: GameMode;
+}) {
+  const expNeeded = useMemo(() => getExpNeeded(player.level), [player.level]);
+  const lifeCells = Array.from({ length: player.maxLives });
+  const hudSlots = useMemo(() => getHudSlots(player), [player]);
+  const radar = stats.combatHud;
+
+  return (
+    <div className="pixelx-hud">
+      <div className="pixelx-hud-title" aria-hidden="true">
+        <span>ALIEN SURVIVOR</span>
+      </div>
+
+      <div className="pixelx-hud-left pixelx-glass">
+        <div className="pixelx-life-row">
+          <span>LIFE</span>
+          {lifeCells.map((_, index) => (
+            <i key={index} className={index < player.lives ? "is-live" : ""} />
+          ))}
+        </div>
+        <Meter value={player.health} max={player.maxHealth} tone="hp" label="HP" />
+        {player.maxShield > 0 && (
+          <Meter value={player.shield} max={player.maxShield} tone="shield" label="SHIELD" />
+        )}
+      </div>
+
+      <div className="pixelx-hud-center pixelx-glass">
+        <strong>{formatTime(stats.survivalTime)}</strong>
+        <span>SCORE {stats.score.toLocaleString()}</span>
+      </div>
+
+      <div className="pixelx-hud-right pixelx-glass">
+        <div><span>LV</span><strong>{player.level}</strong></div>
+        <div><span>KILLS</span><strong>{stats.killCount}</strong></div>
+        <div><span>RUN</span><strong>{gameMode.toUpperCase()}</strong></div>
+      </div>
+
+      <div className="pixelx-radar pixelx-glass" aria-hidden="true">
+        <div className="pixelx-radar-screen">
+          <i className="pixelx-radar-sweep" />
+          <i className="pixelx-radar-player" />
+          {(radar?.radarBlips ?? []).map((blip, index) => (
+            <i
+              key={`${blip.type}-${index}`}
+              className={`pixelx-radar-blip pixelx-radar-${blip.threat}`}
+              style={{
+                left: `${50 + blip.x * 42}%`,
+                top: `${50 + blip.y * 42}%`,
+              }}
+            />
+          ))}
+        </div>
+        <div className="pixelx-radar-meta">
+          <span>{radar?.bossActive ? "BOSS" : "RADAR"}</span>
+          <strong>{radar?.enemyCount ?? 0}</strong>
+        </div>
+      </div>
+
+      <div className="pixelx-loadout">
+        {hudSlots.map((slot) => (
+          <div
+            key={slot.id}
+            className={`pixelx-loadout-slot pixelx-slot-${slot.tone} ${slot.active ? "is-active" : ""}`}
+          >
+            <strong>{slot.label}</strong>
+            <span>{slot.value}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="pixelx-xp-rail">
+        <div style={{ width: `${Math.min(100, (player.exp / expNeeded) * 100)}%` }} />
+        <span>XP {Math.floor(player.exp)} / {expNeeded}</span>
+      </div>
+    </div>
+  );
+}
+
+function LevelUp({
   skillOptions,
   onSelectSkill,
 }: {
   skillOptions: SkillEffect[];
   onSelectSkill: (skill: SkillEffect) => void;
 }) {
-  // 检测移动端
-  const isMobile = window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'rgba(0, 0, 0, 0.85)',
-        zIndex: 50,
-        padding: isMobile ? '8px' : '16px',
-        overflow: 'auto',
-      }}
-    >
-      <div className="pixel-panel" style={{ 
-        maxWidth: isMobile ? '100%' : '800px', 
-        width: '100%',
-        padding: isMobile ? '12px' : '24px',
-        maxHeight: '100%',
-        overflow: 'auto',
-      }}>
-        {/* 标题 */}
-        <div style={{ textAlign: 'center', marginBottom: isMobile ? '12px' : '24px' }}>
-          <h2 className="pixel-title" style={{ fontSize: isMobile ? '24px' : '36px', color: '#fbbf24' }}>
-            LEVEL UP!
-          </h2>
-          <div className="pixel-label" style={{ marginTop: '4px', fontSize: isMobile ? '12px' : '14px' }}>
-            CHOOSE A SKILL
-          </div>
+    <div className="pixelx-overlay">
+      <section className="pixelx-level-panel">
+        <div className="pixelx-level-head">
+          <span>LEVEL UP</span>
+          <h2>Choose a mutation</h2>
         </div>
-
-        {/* 技能选项 - 移动端竖向排列 */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            flexWrap: isMobile ? 'nowrap' : 'wrap',
-            gap: isMobile ? '10px' : '16px',
-            justifyContent: 'center',
-            alignItems: 'center',
-            overflowY: isMobile ? 'auto' : 'visible',
-            maxHeight: isMobile ? '70vh' : 'none',
-            paddingBottom: isMobile ? '8px' : '0',
-          }}
-        >
+        <div className="pixelx-skill-grid">
           {skillOptions.map((skill) => (
-            <button
-              key={skill.id}
-              className="pixel-card"
-              onClick={() => onSelectSkill(skill)}
-              style={{
-                padding: isMobile ? '12px 16px' : '20px',
-                textAlign: 'center',
-                cursor: 'pointer',
-                transition: 'transform 0.1s',
-                width: isMobile ? '90%' : 'auto',
-                minWidth: isMobile ? 'auto' : '180px',
-                maxWidth: isMobile ? '100%' : '220px',
-                flex: isMobile ? '0 0 auto' : '1 1 180px',
-                display: 'flex',
-                flexDirection: isMobile ? 'row' : 'column',
-                alignItems: 'center',
-                gap: isMobile ? '12px' : '0',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'scale(1.05)';
-                e.currentTarget.style.borderColor = '#63b3ed #4299e1 #4299e1 #63b3ed';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.borderColor = '#4a5568 #1a202c #1a202c #4a5568';
-              }}
-            >
-              {/* 图标 */}
-              <div style={{ fontSize: isMobile ? '32px' : '48px', marginBottom: isMobile ? '0' : '12px', flexShrink: 0 }}>{skill.icon}</div>
+            (() => {
+              const evolutionLabel = getEvolutionLabel(skill);
 
-              {/* 名称和描述容器 */}
-              <div style={{ flex: 1, textAlign: isMobile ? 'left' : 'center' }}>
-                {/* 名称 */}
-                <div className="pixel-text" style={{ fontSize: isMobile ? '14px' : '18px', marginBottom: isMobile ? '2px' : '8px' }}>
-                  {skill.name}
-                </div>
-
-                {/* 描述 */}
-                <div className="pixel-label" style={{ 
-                  fontSize: isMobile ? '11px' : '12px', 
-                  color: '#cbd5e0',
-                  lineHeight: '1.3',
-                }}>
-                  {skill.description}
-                </div>
-              </div>
-
-              {/* 类型和稀有度标签 - 移动端隐藏类型 */}
-              <div style={{ marginTop: isMobile ? '6px' : '12px' }}>
-                {!isMobile && (
-                  <span
-                    style={{
-                      padding: '4px 8px',
-                      background: '#1a202c',
-                      border: '2px solid #4a5568',
-                      display: 'inline-block',
-                      fontSize: '10px',
-                      textTransform: 'uppercase',
-                      color: '#cbd5e0',
-                      marginRight: '4px',
-                    }}
-                  >
-                    {skill.type}
-                  </span>
-                )}
-
-                {/* 稀有度标签 */}
-                {skill.rarity && (
-                  <span
-                    style={{
-                      padding: isMobile ? '2px 4px' : '4px 8px',
-                      display: 'inline-block',
-                      fontSize: isMobile ? '8px' : '10px',
-                      textTransform: 'uppercase',
-                      fontWeight: 'bold',
-                      ...(skill.rarity === 'epic'
-                        ? {
-                          background: '#553c9a',
-                          border: '2px solid #6b46c1',
-                          color: '#e9d5ff',
-                          boxShadow: '0 0 8px rgba(139, 92, 246, 0.6)',
-                        }
-                        : skill.rarity === 'rare'
-                          ? {
-                            background: '#065f46',
-                            border: '2px solid #047857',
-                            color: '#a7f3d0',
-                            boxShadow: '0 0 6px rgba(16, 185, 129, 0.4)',
-                          }
-                          : {}),
-                    }}
-                  >
-                    {skill.rarity === 'epic' ? '史诗' : skill.rarity === 'rare' ? '稀有' : ''}
-                  </span>
-                )}
-              </div>
-            </button>
+              return (
+                <button
+                  key={skill.id}
+                  className={`pixelx-skill-card rarity-${skill.rarity ?? "common"} ${skill.tags?.includes("evolution") ? "is-evolution" : ""}`}
+                  onClick={() => onSelectSkill(skill)}
+                >
+                  <div className="pixelx-skill-glyph">{getSkillGlyph(skill)}</div>
+                  <div className="pixelx-skill-copy">
+                    <span>{getRarityLabel(skill)} / {skill.type.toUpperCase()}</span>
+                    <strong>{skill.name}</strong>
+                    <p>{skill.getDescription ? skill.getDescription() : skill.description}</p>
+                    {evolutionLabel && <em>{evolutionLabel}</em>}
+                  </div>
+                </button>
+              );
+            })()
           ))}
         </div>
-      </div>
+      </section>
     </div>
   );
 }
 
-/**
- * 像素风格游戏结束界面
- */
-function PixelGameOver({
+function GameOver({
   stats,
   player,
   isNewRecord,
+  gameMode,
+  dailyBestScore,
   onRestart,
 }: {
   stats: GameStats;
   player: { level: number };
   isNewRecord: boolean;
+  gameMode: GameMode;
+  dailyBestScore: number;
   onRestart: () => void;
 }) {
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'rgba(0, 0, 0, 0.9)',
-        zIndex: 50,
-      }}
-    >
-      <div className="pixel-panel" style={{ maxWidth: '500px', width: '90%', textAlign: 'center' }}>
-        {/* 标题 */}
-        <h2 className="pixel-title" style={{ fontSize: '40px', color: '#f56565', marginBottom: '24px' }}>
-          GAME OVER
-        </h2>
-
-        {/* 新纪录 */}
-        {isNewRecord && (
-          <div
-            className="pixel-text pixel-blink"
-            style={{ fontSize: '24px', color: '#fbbf24', marginBottom: '16px' }}
-          >
-            🎉 NEW RECORD! 🎉
-          </div>
-        )}
-
-        {/* 统计数据 */}
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-            <div className="pixel-card" style={{ padding: '12px' }}>
-              <div className="pixel-label">SCORE</div>
-              <div className="pixel-number">{stats.score.toLocaleString()}</div>
-            </div>
-            <div className="pixel-card" style={{ padding: '12px' }}>
-              <div className="pixel-label">KILLS</div>
-              <div className="pixel-number">{stats.killCount}</div>
-            </div>
-            <div className="pixel-card" style={{ padding: '12px' }}>
-              <div className="pixel-label">TIME</div>
-              <div className="pixel-number">
-                {Math.floor(stats.survivalTime / 60)}:
-                {(stats.survivalTime % 60).toString().padStart(2, '0')}
-              </div>
-            </div>
-            <div className="pixel-card" style={{ padding: '12px' }}>
-              <div className="pixel-label">LEVEL</div>
-              <div className="pixel-number">{player.level}</div>
-            </div>
-          </div>
-
-          {stats.highScore > 0 && (
-            <div className="pixel-card" style={{ padding: '12px', marginTop: '16px' }}>
-              <div className="pixel-label">HIGH SCORE</div>
-              <div className="pixel-number" style={{ fontSize: '28px', color: '#fbbf24' }}>
-                {stats.highScore.toLocaleString()}
-              </div>
-            </div>
+    <div className="pixelx-overlay">
+      <section className="pixelx-gameover pixelx-panel">
+        <span className="pixelx-kicker">{gameMode === "daily" ? "DAILY SIGNAL LOST" : "RUN TERMINATED"}</span>
+        <h2>GAME OVER</h2>
+        {isNewRecord && <strong className="pixelx-record">NEW RECORD</strong>}
+        <div className="pixelx-result-grid">
+          <div><span>SCORE</span><strong>{stats.score.toLocaleString()}</strong></div>
+          <div><span>KILLS</span><strong>{stats.killCount}</strong></div>
+          <div><span>TIME</span><strong>{formatTime(stats.survivalTime)}</strong></div>
+          <div><span>LEVEL</span><strong>{player.level}</strong></div>
+          <div><span>BEST</span><strong>{stats.highScore.toLocaleString()}</strong></div>
+          {gameMode === "daily" && (
+            <div><span>TODAY</span><strong>{dailyBestScore.toLocaleString()}</strong></div>
           )}
         </div>
-
-        {/* 重新开始按钮 */}
-        <PixelButton onClick={onRestart} size="large" variant="primary">
-          ▶ PLAY AGAIN
-        </PixelButton>
-      </div>
+        <PixelButton onClick={onRestart}>PLAY AGAIN</PixelButton>
+      </section>
     </div>
   );
 }
 
-/**
- * 像素风格HUD（游戏内UI）
- */
-function PixelHUD({
-  player,
-  stats,
-}: {
-  player: {
-    health: number;
-    maxHealth: number;
-    shield: number;
-    maxShield: number;
-    level: number;
-    exp: number;
-    lives: number; // 新增
-    maxLives: number; // 新增
-  };
-  stats: GameStats;
-}) {
-  const baseKills = GAME_CONFIG.LEVELING.BASE_KILLS_FOR_FIRST_LEVEL ?? 5;
-  const baseExp = GAME_CONFIG.LEVELING.EXP_PER_KILL * baseKills;
-  const growth = GAME_CONFIG.LEVELING.GROWTH_RATE ?? 1.33;
-  const expNeeded = Math.ceil(baseExp * Math.pow(growth, Math.max(0, player.level - 1)));
-
+function PauseOverlay({ onResume }: { onResume: () => void }) {
   return (
-    <>
-      {/* 顶部状态栏 */}
-      <div
-        style={{
-          position: 'fixed',
-          top: '16px',
-          left: '16px',
-          right: '16px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          pointerEvents: 'none',
-          zIndex: 10,
-        }}
-      >
-        {/* 左侧：生命值与护盾 */}
-        <div style={{ width: '280px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {/* 生命爱心（新增） */}
-          <div
-            className="pixel-panel"
-            style={{
-              padding: '8px 12px',
-              background: 'rgba(0,0,0,0.6)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
-          >
-            <span
-              className="pixel-label"
-              style={{
-                fontSize: '18px',
-                marginRight: '4px',
-              }}
-            >
-              ❤️
-            </span>
-            {Array.from({ length: player.maxLives }).map((_, index) => (
-              <span
-                key={index}
-                style={{
-                  fontSize: '24px',
-                  filter: index < player.lives ? 'none' : 'grayscale(100%) opacity(0.3)',
-                  transition: 'all 0.3s ease',
-                }}
-              >
-                ❤️
-              </span>
-            ))}
-          </div>
-
-          <div className="pixel-panel" style={{ padding: '8px', background: 'rgba(0,0,0,0.6)' }}>
-            <PixelProgressBar
-              value={player.health}
-              max={player.maxHealth}
-              type="health"
-              label="HP"
-            />
-            {player.maxShield > 0 && (
-              <PixelProgressBar
-                value={player.shield}
-                max={player.maxShield}
-                type="shield"
-                label="SHIELD"
-              />
-            )}
-          </div>
-        </div>
-
-        {/* 中间：时间与分数 */}
-        <div style={{ textAlign: 'center' }}>
-          <div className="pixel-panel" style={{ padding: '8px 24px', background: 'rgba(0,0,0,0.6)', display: 'inline-block' }}>
-            <div className="pixel-number" style={{ fontSize: '32px', color: '#fff', textShadow: '2px 2px 0 #000' }}>
-              {Math.floor(stats.survivalTime / 60)}:{(stats.survivalTime % 60).toString().padStart(2, '0')}
-            </div>
-            <div className="pixel-text" style={{ fontSize: '14px', color: '#fbbf24', marginTop: '4px' }}>
-              SCORE: {stats.score.toLocaleString()}
-            </div>
-          </div>
-        </div>
-
-        {/* 右侧：击杀与等级 */}
-        <div style={{ width: '250px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
-          <div className="pixel-panel" style={{ padding: '8px', background: 'rgba(0,0,0,0.6)', minWidth: '120px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <span className="pixel-label">KILLS</span>
-              <span className="pixel-number">{stats.killCount}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span className="pixel-label">LEVEL</span>
-              <span className="pixel-number" style={{ color: '#63b3ed' }}>{player.level}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 底部：经验条 */}
-      <div
-        style={{
-          position: 'fixed',
-          bottom: '0',
-          left: '0',
-          right: '0',
-          height: '12px', // 变细
-          background: '#1a202c',
-          borderTop: '1px solid #4a5568', // 边框变细
-          zIndex: 10,
-          pointerEvents: 'none',
-        }}
-      >
-        <div
-          style={{
-            width: `${Math.min(100, (player.exp / expNeeded) * 100)}%`,
-            height: '100%',
-            background: 'linear-gradient(to right, #fbbf24, #f59e0b)',
-            transition: 'width 0.2s',
-          }}
-        />
-        <div
-          className="pixel-text"
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            fontSize: '10px', // 字体变小
-            color: '#fff',
-            textShadow: '1px 1px 0 #000',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          EXP {player.exp} / {expNeeded}
-        </div>
-      </div>
-    </>
+    <div className="pixelx-overlay">
+      <section className="pixelx-pause pixelx-panel">
+        <span className="pixelx-kicker">SIGNAL HELD</span>
+        <h2>PAUSED</h2>
+        <PixelButton onClick={onResume}>CONTINUE</PixelButton>
+      </section>
+    </div>
   );
 }
 
-/**
- * 主像素UI组件
- */
 export function PixelUI({
   gameState,
+  gameMode,
   stats,
   player,
   skillOptions,
   isNewRecord,
   onStartGame,
+  onResume,
   onSelectSkill,
   onRestart,
   dailyChallenge,
+  dailyBestScore,
   achievements,
   achievementProgress,
 }: PixelUIProps) {
-  // 游戏内HUD
-  if (gameState === 'playing' || gameState === 'paused') {
-    return <PixelHUD player={player} stats={stats} />;
-  }
-
-  // 主菜单
-  if (gameState === 'menu') {
+  if (gameState === "menu") {
     return (
-      <PixelMainMenu
+      <MainMenu
         stats={stats}
-        onStartGame={onStartGame}
+        gameMode={gameMode}
         dailyChallenge={dailyChallenge}
+        dailyBestScore={dailyBestScore}
         achievements={achievements}
         achievementProgress={achievementProgress}
+        onStartGame={onStartGame}
       />
     );
   }
 
-  // 升级界面
-  if (gameState === 'levelup') {
-    return <PixelLevelUp skillOptions={skillOptions} onSelectSkill={onSelectSkill} />;
+  if (gameState === "playing") {
+    return <HUD player={player} stats={stats} gameMode={gameMode} />;
   }
 
-  // 游戏结束
-  if (gameState === 'gameover') {
+  if (gameState === "paused") {
     return (
-      <PixelGameOver
+      <>
+        <HUD player={player} stats={stats} gameMode={gameMode} />
+        <PauseOverlay onResume={onResume} />
+      </>
+    );
+  }
+
+  if (gameState === "levelup") {
+    return <LevelUp skillOptions={skillOptions} onSelectSkill={onSelectSkill} />;
+  }
+
+  if (gameState === "gameover") {
+    return (
+      <GameOver
         stats={stats}
         player={player}
         isNewRecord={isNewRecord}
+        gameMode={gameMode}
+        dailyBestScore={dailyBestScore}
         onRestart={onRestart}
       />
     );
@@ -890,4 +549,3 @@ export function PixelUI({
 
   return null;
 }
-

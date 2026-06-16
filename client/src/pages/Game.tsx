@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from "react";
-import { Button } from "@/components/ui/button";
-import { GameState, GameStats } from "../gameTypes";
+import { GameMode, GameState, GameStats } from "../gameTypes";
 import { GameStorage } from "../utils/GameStorage";
 import { VirtualJoystick } from "../utils/VirtualJoystick";
 import { GameEngine } from "../core/GameEngine";
@@ -36,6 +35,8 @@ export default function Game() {
   });
   const [skillOptions, setSkillOptions] = useState<SkillEffect[]>([]);
   const [isNewRecord, setIsNewRecord] = useState(false);
+  const [gameMode, setGameMode] = useState<GameMode>("classic");
+  const [dailyBestScore, setDailyBestScore] = useState(0);
   const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge | null>(null); // 新增：每日挑战状态
   const [achievements, setAchievements] = useState<Achievement[]>([]); // 新增：成就列表
   const [achievementProgress, setAchievementProgress] = useState<Map<string, AchievementProgress>>(new Map()); // 新增：成就进度
@@ -58,13 +59,17 @@ export default function Game() {
 
     // 检测设备信息
     const deviceInfo = DeviceUtils.detectDevice();
-    console.log('[Game] Device info:', deviceInfo);
-    console.log('[Game] Performance level:', DeviceUtils.getPerformanceLevel());
+    if (import.meta.env.DEV) {
+      console.log('[Game] Device info:', deviceInfo);
+      console.log('[Game] Performance level:', DeviceUtils.getPerformanceLevel());
+    }
 
     // 移动端：尝试锁定横屏方向（游戏更适合横屏）
     if (deviceInfo.isMobile && deviceInfo.orientation === 'landscape') {
       DeviceUtils.lockOrientation('landscape').catch(() => {
-        console.log('[Game] Screen orientation lock not supported');
+        if (import.meta.env.DEV) {
+          console.log('[Game] Screen orientation lock not supported');
+        }
       });
     }
 
@@ -98,7 +103,12 @@ export default function Game() {
       // 获取每日挑战信息（新增）
       const challengeSystem = engine.getDailyChallengeSystem();
       challengeSystem.generateTodaysChallenge();
-      setDailyChallenge(challengeSystem.getCurrentChallenge());
+      const currentChallenge = challengeSystem.getCurrentChallenge();
+      setDailyChallenge(currentChallenge);
+      if (currentChallenge) {
+        const savedData = GameStorage.load();
+        setDailyBestScore(savedData.dailyBestByDate[currentChallenge.id] ?? 0);
+      }
 
       // 获取成就系统信息（新增）
       const achievementSystem = engine.getAchievementSystem();
@@ -169,7 +179,11 @@ export default function Game() {
   useEffect(() => {
     if (gameState !== "playing") return;
 
+    let animationId: number;
+    let active = true;
+
     const syncInput = () => {
+      if (!active) return;
       const engine = gameEngineRef.current;
       if (!engine) return;
 
@@ -183,12 +197,13 @@ export default function Game() {
       };
       engine.setJoystickInput(joystick.x, joystick.y);
 
-      requestAnimationFrame(syncInput);
+      animationId = requestAnimationFrame(syncInput);
     };
 
-    const animationId = requestAnimationFrame(syncInput);
+    animationId = requestAnimationFrame(syncInput);
 
     return () => {
+      active = false;
       cancelAnimationFrame(animationId);
     };
   }, [gameState]);
@@ -196,7 +211,7 @@ export default function Game() {
   /**
    * 开始游戏
    */
-  const initGame = async () => {
+  const initGame = async (mode: GameMode = gameMode) => {
     const engine = gameEngineRef.current;
     if (!engine) {
       console.error('[Game] GameEngine not initialized!');
@@ -209,8 +224,9 @@ export default function Game() {
       await DeviceUtils.requestFullscreen(document.documentElement);
     }
 
-    // 重置游戏引擎
-    engine.reset();
+    setGameMode(mode);
+    engine.setGameMode(mode);
+    engine.reset(mode);
 
     // 重置 UI 状态
     setStats((prev) => ({
@@ -277,11 +293,23 @@ export default function Game() {
 
     const currentStats = engine.getStats();
 
-    // 检查是否破纪录
-    if (currentStats.score > stats.highScore) {
+    const isRecord = GameStorage.recordGameEnd(
+      currentStats.score,
+      currentStats.killCount,
+      currentStats.survivalTime,
+      engine.getGameMode(),
+      engine.getCurrentChallengeId()
+    );
+
+    if (isRecord) {
       setIsNewRecord(true);
-      GameStorage.updateHighScore(currentStats.score);
       setStats((prev) => ({ ...prev, highScore: currentStats.score }));
+    }
+
+    const savedData = GameStorage.load();
+    const challengeId = engine.getCurrentChallengeId();
+    if (challengeId) {
+      setDailyBestScore(savedData.dailyBestByDate[challengeId] ?? 0);
     }
 
     setGameState("gameover");
@@ -308,6 +336,12 @@ export default function Game() {
         exp: 0,
         lives: 3, // 新增：默认3条命
         maxLives: 3, // 新增：最大3条命
+        bulletCount: 1,
+        hasFrostShot: false,
+        hasFlameAttack: false,
+        hasPierce: false,
+        critChance: 0,
+        weapons: [],
       };
     }
     return {
@@ -319,6 +353,15 @@ export default function Game() {
       exp: player.exp,
       lives: player.lives, // 新增
       maxLives: player.maxLives, // 新增
+      bulletCount: player.bulletCount,
+      hasFrostShot: player.hasFrostShot,
+      hasFlameAttack: player.hasFlameAttack,
+      hasPierce: player.hasPierce,
+      critChance: player.critChance,
+      weapons: player.weapons.map((weapon) => ({
+        type: weapon.type,
+        level: weapon.level,
+      })),
     };
   }, [gameState, stats]); // 只在游戏状态或统计数据变化时更新
 
@@ -342,168 +385,16 @@ export default function Game() {
         player={playerData}
         skillOptions={skillOptions}
         isNewRecord={isNewRecord}
+        gameMode={gameMode}
         onStartGame={initGame}
+        onResume={resumeGame}
         onSelectSkill={selectSkill}
-        onRestart={initGame}
+        onRestart={() => initGame(gameMode)}
         dailyChallenge={dailyChallenge}
+        dailyBestScore={dailyBestScore}
         achievements={achievements}
         achievementProgress={achievementProgress}
       />
-      
-      {/* 旧UI（暂时保留作为后备） */}
-      {false && gameState === "menu" && (
-        <div className="flex flex-col items-center gap-8">
-          <div className="text-center">
-            <h1 className="text-5xl font-bold text-white mb-2">异星幸存者</h1>
-            <p className="text-xl text-slate-400">Alien Survivor</p>
-          </div>
-
-          <div className="text-center text-slate-300 space-y-2">
-            <p>🎮 移动: WASD 或虚拟摇杆</p>
-            <p>🔫 射击: 自动攻击</p>
-            <p>⏸️ 暂停: ESC 键</p>
-          </div>
-
-          <Button
-            onClick={initGame}
-            size="lg"
-            className="text-xl px-8 py-6 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
-          >
-            开始游戏
-          </Button>
-
-          {stats.highScore > 0 && (
-            <div className="text-center">
-              <p className="text-slate-400">最高分</p>
-              <p className="text-3xl font-bold text-yellow-400">
-                {stats.highScore}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 暂停界面（像素风格） */}
-      {gameState === "paused" && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(0, 0, 0, 0.8)',
-            zIndex: 50,
-          }}
-        >
-          <div className="pixel-panel" style={{ textAlign: 'center', padding: '48px' }}>
-            <h2 className="pixel-title" style={{ fontSize: '40px', marginBottom: '32px', color: '#63b3ed' }}>
-              PAUSED
-            </h2>
-            <button
-              className="pixel-button"
-              onClick={resumeGame}
-              style={{
-                padding: '16px 32px',
-                fontSize: '20px',
-                background: '#4a5568',
-                borderColor: '#2d3748 #1a202c #1a202c #2d3748',
-              }}
-            >
-              ▶ CONTINUE
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 升级界面 */}
-      {gameState === "levelup" && (
-        <div className="flex flex-col items-center gap-6">
-          <h2 className="text-4xl font-bold text-white">升级!</h2>
-          <p className="text-xl text-slate-300">选择一个技能</p>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl">
-            {skillOptions.map((skill) => (
-              <button
-                key={skill.id}
-                onClick={() => selectSkill(skill)}
-                className="p-6 bg-slate-800 hover:bg-slate-700 border-2 border-slate-600 hover:border-blue-500 rounded-lg transition-all transform hover:scale-105"
-              >
-                <div className="text-2xl mb-2">{skill.icon}</div>
-                <h3 className="text-xl font-bold text-white mb-2">
-                  {skill.name}
-                </h3>
-                <p className="text-slate-400">{skill.description}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 游戏结束界面 */}
-      {gameState === "gameover" && (
-        <div className="flex flex-col items-center gap-6">
-          <h2 className="text-5xl font-bold text-red-500">游戏结束</h2>
-
-          {isNewRecord && (
-            <div className="text-center">
-              <p className="text-3xl font-bold text-yellow-400 mb-2">
-                🎉 新纪录! 🎉
-              </p>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-8 text-center">
-            <div>
-              <p className="text-slate-400">得分</p>
-              <p className="text-4xl font-bold text-white">{stats.score}</p>
-            </div>
-            <div>
-              <p className="text-slate-400">击杀</p>
-              <p className="text-4xl font-bold text-white">{stats.killCount}</p>
-            </div>
-            <div>
-              <p className="text-slate-400">存活时间</p>
-              <p className="text-4xl font-bold text-white">
-                {Math.floor(stats.survivalTime / 60)}:
-                {(stats.survivalTime % 60).toString().padStart(2, "0")}
-              </p>
-            </div>
-            <div>
-              <p className="text-slate-400">等级</p>
-              <p className="text-4xl font-bold text-white">
-                {gameEngineRef.current?.getPlayer().level || 1}
-              </p>
-            </div>
-          </div>
-
-          {stats.highScore > 0 && (
-            <div className="text-center">
-              <p className="text-slate-400">最高分</p>
-              <p className="text-2xl font-bold text-yellow-400">
-                {stats.highScore}
-              </p>
-            </div>
-          )}
-
-          <div className="flex gap-4">
-            <Button
-              onClick={initGame}
-              size="lg"
-              className="bg-blue-500 hover:bg-blue-600"
-            >
-              再来一局
-            </Button>
-            <Button
-              onClick={() => setGameState("menu")}
-              size="lg"
-              variant="outline"
-            >
-              返回菜单
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

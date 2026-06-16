@@ -114,7 +114,9 @@ export class PerformanceOptimizer {
       this.adaptiveQualityLevel = 2;
     }
     
-    console.log(`[PerformanceOptimizer] Device score: ${score}, Low-end: ${this.isLowEndDevice}`);
+    if (import.meta.env.DEV) {
+      console.log(`[PerformanceOptimizer] Device score: ${score}, Low-end: ${this.isLowEndDevice}`);
+    }
   }
 
   /**
@@ -165,14 +167,18 @@ export class PerformanceOptimizer {
       if (this.adaptiveQualityLevel > 0) {
         this.adaptiveQualityLevel--;
         this.applyQualitySettings();
-        console.log(`[PerformanceOptimizer] 降低质量到等级 ${this.adaptiveQualityLevel}`);
+        if (import.meta.env.DEV) {
+          console.log(`[PerformanceOptimizer] 降低质量到等级 ${this.adaptiveQualityLevel}`);
+        }
       }
     } else if (avgFPS > targetFPS * 1.1) {
       // 性能充足，提升质量
       if (this.adaptiveQualityLevel < 2) {
         this.adaptiveQualityLevel++;
         this.applyQualitySettings();
-        console.log(`[PerformanceOptimizer] 提升质量到等级 ${this.adaptiveQualityLevel}`);
+        if (import.meta.env.DEV) {
+          console.log(`[PerformanceOptimizer] 提升质量到等级 ${this.adaptiveQualityLevel}`);
+        }
       }
     }
   }

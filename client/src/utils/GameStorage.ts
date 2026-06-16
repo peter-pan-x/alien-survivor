@@ -1,3 +1,5 @@
+import type { GameMode } from "../gameTypes";
+
 /**
  * 游戏数据持久化工具
  */
@@ -10,6 +12,13 @@ export interface SavedGameData {
   totalGamesPlayed: number;
   longestSurvivalTime: number;
   lastPlayed: number;
+  dailyBestByDate: Record<string, number>;
+  settings: {
+    volume: number;
+    quality: "low" | "medium" | "high";
+    showPerformance: boolean;
+    autoFullscreen: boolean;
+  };
 }
 
 const DEFAULT_DATA: SavedGameData = {
@@ -18,7 +27,31 @@ const DEFAULT_DATA: SavedGameData = {
   totalGamesPlayed: 0,
   longestSurvivalTime: 0,
   lastPlayed: 0,
+  dailyBestByDate: {},
+  settings: {
+    volume: 0.7,
+    quality: "medium",
+    showPerformance: false,
+    autoFullscreen: true,
+  },
 };
+
+function mergeSavedData(raw: unknown): SavedGameData {
+  const parsed = raw && typeof raw === "object" ? raw as Partial<SavedGameData> : {};
+
+  return {
+    ...DEFAULT_DATA,
+    ...parsed,
+    dailyBestByDate: {
+      ...DEFAULT_DATA.dailyBestByDate,
+      ...(parsed.dailyBestByDate ?? {}),
+    },
+    settings: {
+      ...DEFAULT_DATA.settings,
+      ...(parsed.settings ?? {}),
+    },
+  };
+}
 
 export class GameStorage {
   /**
@@ -28,12 +61,12 @@ export class GameStorage {
     try {
       const data = localStorage.getItem(STORAGE_KEY);
       if (data) {
-        return { ...DEFAULT_DATA, ...JSON.parse(data) };
+        return mergeSavedData(JSON.parse(data));
       }
     } catch (error) {
       console.error("Failed to load game data:", error);
     }
-    return { ...DEFAULT_DATA };
+    return mergeSavedData(null);
   }
 
   /**
@@ -64,7 +97,13 @@ export class GameStorage {
   /**
    * 记录游戏结束
    */
-  static recordGameEnd(score: number, kills: number, survivalTime: number): boolean {
+  static recordGameEnd(
+    score: number,
+    kills: number,
+    survivalTime: number,
+    mode: GameMode = "classic",
+    challengeId?: string
+  ): boolean {
     const data = this.load();
     let isNewRecord = false;
 
@@ -78,6 +117,11 @@ export class GameStorage {
 
     if (survivalTime > data.longestSurvivalTime) {
       data.longestSurvivalTime = survivalTime;
+    }
+
+    if (mode === "daily" && challengeId) {
+      const previousDailyBest = data.dailyBestByDate[challengeId] ?? 0;
+      data.dailyBestByDate[challengeId] = Math.max(previousDailyBest, score);
     }
 
     data.lastPlayed = Date.now();
@@ -104,4 +148,3 @@ export class GameStorage {
     return this.load();
   }
 }
-

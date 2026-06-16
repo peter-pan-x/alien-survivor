@@ -1,3 +1,5 @@
+import { GAME_CONFIG } from "../gameConfig";
+
 /**
  * 相机系统 - 实现无尽地图的视角跟随
  * 简单高效的实现：玩家始终在屏幕中心，世界随玩家移动
@@ -41,9 +43,10 @@ export class Camera {
    * 将世界坐标转换为屏幕坐标
    */
   worldToScreen(worldX: number, worldY: number): { x: number; y: number } {
+    const yScale = GAME_CONFIG.RENDERING.ISOMETRIC_Y_SCALE ?? 1;
     return {
       x: worldX - this.x + this.width / 2,
-      y: worldY - this.y + this.height / 2,
+      y: (worldY - this.y) * yScale + this.height / 2,
     };
   }
 
@@ -51,9 +54,10 @@ export class Camera {
    * 将屏幕坐标转换为世界坐标
    */
   screenToWorld(screenX: number, screenY: number): { x: number; y: number } {
+    const yScale = GAME_CONFIG.RENDERING.ISOMETRIC_Y_SCALE ?? 1;
     return {
       x: screenX + this.x - this.width / 2,
-      y: screenY + this.y - this.height / 2,
+      y: (screenY - this.height / 2) / yScale + this.y,
     };
   }
 
@@ -74,11 +78,12 @@ export class Camera {
    * 获取当前视野的世界坐标边界
    */
   getViewBounds(): { left: number; right: number; top: number; bottom: number } {
+    const yScale = GAME_CONFIG.RENDERING.ISOMETRIC_Y_SCALE ?? 1;
     return {
       left: this.x - this.width / 2,
       right: this.x + this.width / 2,
-      top: this.y - this.height / 2,
-      bottom: this.y + this.height / 2,
+      top: this.y - this.height / 2 / yScale,
+      bottom: this.y + this.height / 2 / yScale,
     };
   }
 
@@ -94,8 +99,11 @@ export class Camera {
    * 应用相机变换到Canvas上下文
    */
   applyTransform(ctx: CanvasRenderingContext2D): void {
+    const yScale = GAME_CONFIG.RENDERING.ISOMETRIC_Y_SCALE ?? 1;
     ctx.save();
-    ctx.translate(-this.x + this.width / 2, -this.y + this.height / 2);
+    ctx.translate(this.width / 2, this.height / 2);
+    ctx.scale(1, yScale);
+    ctx.translate(-this.x, -this.y);
   }
 
   /**

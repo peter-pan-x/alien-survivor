@@ -39,10 +39,11 @@ export const EXP_ORB_CONFIG = {
   
   // 颜色配置
   COLORS: {
-    SMALL: "#4ade80",   // 绿色
-    MEDIUM: "#60a5fa",  // 蓝色
-    LARGE: "#a78bfa",   // 紫色
-    GLOW: "rgba(74, 222, 128, 0.3)",
+    SMALL: "#84cc16",
+    MEDIUM: "#65a30d",
+    LARGE: "#bef264",
+    CORE: "#ecfccb",
+    GLOW: "rgba(132, 204, 22, 0.34)",
   },
 };
 
@@ -187,15 +188,18 @@ export class ExpOrbSystem {
       const pulseFactor = 1 + Math.sin(pulsePhase) * 0.2;
       const displayRadius = orb.radius * pulseFactor;
 
-      // 确定颜色
-      let color = EXP_ORB_CONFIG.COLORS.SMALL;
-      if (orb.value >= EXP_ORB_CONFIG.SIZE_THRESHOLDS.LARGE) {
-        color = EXP_ORB_CONFIG.COLORS.LARGE;
-      } else if (orb.value >= EXP_ORB_CONFIG.SIZE_THRESHOLDS.MEDIUM) {
-        color = EXP_ORB_CONFIG.COLORS.MEDIUM;
-      }
+      const color = orb.value >= EXP_ORB_CONFIG.SIZE_THRESHOLDS.LARGE
+        ? EXP_ORB_CONFIG.COLORS.LARGE
+        : orb.value >= EXP_ORB_CONFIG.SIZE_THRESHOLDS.MEDIUM
+          ? EXP_ORB_CONFIG.COLORS.MEDIUM
+          : EXP_ORB_CONFIG.COLORS.SMALL;
 
-      // 绘制发光效果（更紧凑）
+      ctx.fillStyle = "rgba(0, 0, 0, 0.34)";
+      ctx.beginPath();
+      ctx.ellipse(orb.x + 2, orb.y + displayRadius * 1.1, displayRadius * 1.8, displayRadius * 0.7, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 绘制发光效果（统一绿色）
       const gradient = ctx.createRadialGradient(
         orb.x, orb.y, 0,
         orb.x, orb.y, displayRadius * 1.5
@@ -209,11 +213,23 @@ export class ExpOrbSystem {
       ctx.arc(orb.x, orb.y, displayRadius * 1.5, 0, Math.PI * 2);
       ctx.fill();
 
-      // 绘制核心（小颗粒）
+      // 绘制 45 度鸟瞰晶核：菱形主体 + 高光像素
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(orb.x, orb.y, displayRadius, 0, Math.PI * 2);
+      ctx.moveTo(orb.x, orb.y - displayRadius * 1.3);
+      ctx.lineTo(orb.x + displayRadius * 1.15, orb.y);
+      ctx.lineTo(orb.x, orb.y + displayRadius * 1.3);
+      ctx.lineTo(orb.x - displayRadius * 1.15, orb.y);
+      ctx.closePath();
       ctx.fill();
+
+      ctx.fillStyle = EXP_ORB_CONFIG.COLORS.CORE;
+      ctx.fillRect(
+        Math.floor(orb.x - displayRadius * 0.25),
+        Math.floor(orb.y - displayRadius * 0.85),
+        Math.max(2, Math.floor(displayRadius * 0.45)),
+        Math.max(2, Math.floor(displayRadius * 0.45))
+      );
 
       ctx.restore();
     }

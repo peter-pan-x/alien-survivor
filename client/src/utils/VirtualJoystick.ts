@@ -44,7 +44,9 @@ export class VirtualJoystick {
     
     this.setupEventListeners();
     
-    console.log('[VirtualJoystick] Initialized, isMobile:', this.isMobile);
+    if (import.meta.env.DEV) {
+      console.log('[VirtualJoystick] Initialized, isMobile:', this.isMobile);
+    }
   }
 
   private setupEventListeners() {
@@ -122,7 +124,9 @@ export class VirtualJoystick {
       if (e.changedTouches[i].identifier === this.touchId) {
         this.deactivateJoystick();
         this.touchId = null;
-        console.log('[VirtualJoystick] Touch ended');
+        if (import.meta.env.DEV) {
+          console.log('[VirtualJoystick] Touch ended');
+        }
         break;
       }
     }
@@ -260,7 +264,8 @@ export class VirtualJoystick {
     this.canvas.removeEventListener("mousemove", this.boundHandleMouseMove);
     this.canvas.removeEventListener("mouseup", this.boundHandleMouseUp);
     this.canvas.removeEventListener("mouseleave", this.boundHandleMouseUp);
-    console.log('[VirtualJoystick] Destroyed');
+    if (import.meta.env.DEV) {
+      console.log('[VirtualJoystick] Destroyed');
+    }
   }
 }
-

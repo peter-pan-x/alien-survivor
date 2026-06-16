@@ -79,7 +79,9 @@ export class DeviceUtils {
       }
       return false;
     } catch (error) {
-      console.warn('Fullscreen request failed:', error);
+      if (import.meta.env.DEV) {
+        console.debug('Fullscreen request failed:', error);
+      }
       return false;
     }
   }
@@ -104,7 +106,9 @@ export class DeviceUtils {
       }
       return false;
     } catch (error) {
-      console.warn('Exit fullscreen failed:', error);
+      if (import.meta.env.DEV) {
+        console.debug('Exit fullscreen failed:', error);
+      }
       return false;
     }
   }
@@ -133,7 +137,9 @@ export class DeviceUtils {
       }
       return false;
     } catch (error) {
-      console.warn('Screen orientation lock failed:', error);
+      if (import.meta.env.DEV) {
+        console.debug('Screen orientation lock failed:', error);
+      }
       return false;
     }
   }
@@ -148,7 +154,9 @@ export class DeviceUtils {
         orientation.unlock();
       }
     } catch (error) {
-      console.warn('Screen orientation unlock failed:', error);
+      if (import.meta.env.DEV) {
+        console.debug('Screen orientation unlock failed:', error);
+      }
     }
   }
 

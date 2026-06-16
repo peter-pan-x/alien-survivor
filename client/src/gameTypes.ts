@@ -36,6 +36,8 @@ export interface Player {
   rareSkillSelections?: Record<string, number>;
   // 技能出现次数映射（用于特殊技能按"出现"递减概率）
   skillAppearances?: Record<string, number>;
+  skillLevels?: Record<string, number>;
+  evolvedSkills?: Record<string, boolean>;
   weapons: ActiveWeapon[];
   // 经验球拾取范围
   pickupRange: number;
@@ -72,6 +74,7 @@ export interface Enemy {
   burningUntil?: number; // 燃烧结束时间戳
   burnDamagePerTick?: number; // 每次燃烧伤害
   lastBurnTick?: number; // 上次燃烧伤害时间
+  lastHitTime?: number; // 上次受击时间，用于生物受击动画
 }
 
 export type BossType = 'level10' | 'level20' | 'level30' | 'level40' | 'level50';
@@ -155,6 +158,15 @@ export interface DamageNumber {
 }
 
 export type GameState = "menu" | "playing" | "paused" | "levelup" | "gameover";
+export type GameMode = "classic" | "daily";
+export type EntityAnimationState = "idle" | "move" | "attack" | "hit" | "death";
+
+export interface AnimatedEntityFrame {
+  state: EntityAnimationState;
+  pixels: string[];
+  colors: Record<string, string>;
+  duration: number;
+}
 
 export type WeaponType = 'orbital' | 'lightning' | 'field';
 
@@ -182,4 +194,18 @@ export interface GameStats {
   killCount: number;
   highScore: number;
   survivalTime: number;
+  combatHud?: CombatHudSnapshot;
+}
+
+export interface RadarBlip {
+  x: number;
+  y: number;
+  type: EnemyType | "boss";
+  threat: "normal" | "elite" | "boss";
+}
+
+export interface CombatHudSnapshot {
+  radarBlips: RadarBlip[];
+  enemyCount: number;
+  bossActive: boolean;
 }

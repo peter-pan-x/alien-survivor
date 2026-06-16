@@ -34,6 +34,8 @@ export interface ResponsiveConfig {
 export class ResponsiveManager {
   private deviceInfo: DeviceInfo;
   private config: ResponsiveConfig;
+  private boundHandleResize: () => void;
+  private boundHandleOrientationChange: () => void;
   private breakpoints = {
     mobile: 768,
     tablet: 1024,
@@ -43,10 +45,12 @@ export class ResponsiveManager {
   constructor() {
     this.deviceInfo = this.detectDevice();
     this.config = this.generateConfig();
+    this.boundHandleResize = this.handleResize.bind(this);
+    this.boundHandleOrientationChange = this.handleOrientationChange.bind(this);
     
     // 监听窗口变化
-    window.addEventListener('resize', this.handleResize.bind(this));
-    window.addEventListener('orientationchange', this.handleOrientationChange.bind(this));
+    window.addEventListener('resize', this.boundHandleResize);
+    window.addEventListener('orientationchange', this.boundHandleOrientationChange);
   }
 
   /**
@@ -312,8 +316,8 @@ export class ResponsiveManager {
    * 销毁管理器
    */
   public destroy(): void {
-    window.removeEventListener('resize', this.handleResize.bind(this));
-    window.removeEventListener('orientationchange', this.handleOrientationChange.bind(this));
+    window.removeEventListener('resize', this.boundHandleResize);
+    window.removeEventListener('orientationchange', this.boundHandleOrientationChange);
   }
 }
 

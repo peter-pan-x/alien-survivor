@@ -9,6 +9,7 @@
     "start": "vite --open",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "type-check": "tsc --noEmit"
   },

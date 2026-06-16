@@ -25,6 +25,10 @@ export class PerformanceMonitor {
     this.enabled = enabled;
   }
 
+  public isEnabled(): boolean {
+    return this.enabled;
+  }
+
   /**
    * 更新 FPS 计数
    */
@@ -131,7 +135,7 @@ export class PerformanceMonitor {
 
     ctx.fillStyle = "#888";
     ctx.font = "10px monospace";
-    ctx.fillText("Press P to toggle", 15, 140);
+    ctx.fillText("Ctrl+P to toggle", 15, 140);
 
     ctx.restore();
   }

@@ -1,6 +1,14 @@
 import { Enemy, EnemyType, Player, Bullet } from "../gameTypes";
 import { GAME_CONFIG } from "../gameConfig";
 
+export interface EnemySpawnModifiers {
+  speedMultiplier?: number;
+  healthMultiplier?: number;
+  spawnCountMultiplier?: number;
+  spawnIntervalMultiplier?: number;
+  typeBias?: Partial<Record<EnemyType, number>>;
+}
+
 export class EnemyManager {
   private enemies: Enemy[] = [];
   private lastSpawnTime: number = 0;
@@ -30,10 +38,13 @@ export class EnemyManager {
     currentTime: number,
     playerX: number = 0,
     playerY: number = 0,
-    playerLevel: number = 1
+    playerLevel: number = 1,
+    modifiers: EnemySpawnModifiers = {}
   ): void {
     const survivalTime = (currentTime - this.gameStartTime) / 1000; // 秒
-    const spawnInterval = this.getSpawnInterval(survivalTime, playerLevel);
+    const spawnInterval =
+      this.getSpawnInterval(survivalTime, playerLevel) *
+      (modifiers.spawnIntervalMultiplier ?? 1);
 
     if (currentTime - this.lastSpawnTime < spawnInterval) {
       return;
@@ -42,17 +53,21 @@ export class EnemyManager {
     this.lastSpawnTime = currentTime;
 
     // 根据等级和时间决定生成数量
-    const spawnCount = this.getSpawnCount(survivalTime, playerLevel);
+    const spawnCount = Math.max(
+      1,
+      Math.round(this.getSpawnCount(survivalTime, playerLevel) * (modifiers.spawnCountMultiplier ?? 1))
+    );
 
     for (let i = 0; i < spawnCount; i++) {
-      const enemyType = this.selectEnemyType(playerLevel); // 改为基于等级
+      const enemyType = this.selectEnemyType(playerLevel, modifiers.typeBias); // 改为基于等级和导演波次
       const enemy = this.createEnemy(
         enemyType,
         canvasWidth,
         canvasHeight,
         survivalTime,
         playerX,
-        playerY
+        playerY,
+        modifiers
       );
       this.enemies.push(enemy);
     }
@@ -83,21 +98,24 @@ export class EnemyManager {
     return Math.min(5 + additional, 8); // 上限提升到8个
   }
 
-  private selectEnemyType(playerLevel: number): EnemyType {
+  private selectEnemyType(
+    playerLevel: number,
+    typeBias: Partial<Record<EnemyType, number>> = {}
+  ): EnemyType {
     // 根据玩家等级解锁不同的敌人类型（每3级解锁一种新怪物）
     const availableTypes: { type: EnemyType; weight: number }[] = [];
 
     // 集群者 - 1级起始可用
     availableTypes.push({
       type: 'swarm',
-      weight: GAME_CONFIG.ENEMY.TYPES.swarm.spawnWeight,
+        weight: this.applyTypeBias('swarm', GAME_CONFIG.ENEMY.TYPES.swarm.spawnWeight, typeBias),
     });
 
     // 冲撞者 - 3级解锁
     if (playerLevel >= 3) {
       availableTypes.push({
         type: 'rusher',
-        weight: GAME_CONFIG.ENEMY.TYPES.rusher.spawnWeight,
+        weight: this.applyTypeBias('rusher', GAME_CONFIG.ENEMY.TYPES.rusher.spawnWeight, typeBias),
       });
     }
 
@@ -105,7 +123,7 @@ export class EnemyManager {
     if (playerLevel >= 6) {
       availableTypes.push({
         type: 'shooter',
-        weight: GAME_CONFIG.ENEMY.TYPES.shooter.spawnWeight,
+        weight: this.applyTypeBias('shooter', GAME_CONFIG.ENEMY.TYPES.shooter.spawnWeight, typeBias),
       });
     }
 
@@ -113,7 +131,7 @@ export class EnemyManager {
     if (playerLevel >= 9) {
       availableTypes.push({
         type: 'elite',
-        weight: GAME_CONFIG.ENEMY.TYPES.elite.spawnWeight,
+        weight: this.applyTypeBias('elite', GAME_CONFIG.ENEMY.TYPES.elite.spawnWeight, typeBias),
       });
     }
 
@@ -121,7 +139,7 @@ export class EnemyManager {
     if (playerLevel >= 2) {
       availableTypes.push({
         type: 'spider',
-        weight: GAME_CONFIG.ENEMY.TYPES.spider.spawnWeight,
+        weight: this.applyTypeBias('spider', GAME_CONFIG.ENEMY.TYPES.spider.spawnWeight, typeBias),
       });
     }
 
@@ -129,7 +147,7 @@ export class EnemyManager {
     if (playerLevel >= 4) {
       availableTypes.push({
         type: 'crab',
-        weight: GAME_CONFIG.ENEMY.TYPES.crab.spawnWeight,
+        weight: this.applyTypeBias('crab', GAME_CONFIG.ENEMY.TYPES.crab.spawnWeight, typeBias),
       });
     }
 
@@ -137,7 +155,7 @@ export class EnemyManager {
     if (playerLevel >= 5) {
       availableTypes.push({
         type: 'bigeye',
-        weight: GAME_CONFIG.ENEMY.TYPES.bigeye.spawnWeight,
+        weight: this.applyTypeBias('bigeye', GAME_CONFIG.ENEMY.TYPES.bigeye.spawnWeight, typeBias),
       });
     }
 
@@ -145,7 +163,7 @@ export class EnemyManager {
     if (playerLevel >= 7) {
       availableTypes.push({
         type: 'frog',
-        weight: GAME_CONFIG.ENEMY.TYPES.frog.spawnWeight,
+        weight: this.applyTypeBias('frog', GAME_CONFIG.ENEMY.TYPES.frog.spawnWeight, typeBias),
       });
     }
 
@@ -163,19 +181,30 @@ export class EnemyManager {
     return 'swarm'; // 默认返回集群者
   }
 
+  private applyTypeBias(
+    type: EnemyType,
+    baseWeight: number,
+    typeBias: Partial<Record<EnemyType, number>>
+  ): number {
+    return Math.max(0.1, baseWeight * (typeBias[type] ?? 1));
+  }
+
   private createEnemy(
     type: EnemyType,
     canvasWidth: number,
     canvasHeight: number,
     survivalTime: number,
     playerX: number = 0,
-    playerY: number = 0
+    playerY: number = 0,
+    modifiers: EnemySpawnModifiers = {}
   ): Enemy {
     const typeConfig = GAME_CONFIG.ENEMY.TYPES[type];
 
     // 基于时间的属性增长（使用配置项，降低增长速度）
     const timeMultiplier = 1 + survivalTime * GAME_CONFIG.ENEMY.HEALTH_GROWTH_PER_SECOND;
-    const globalHealthMultiplier = GAME_CONFIG.ENEMY.GLOBAL_HEALTH_MULTIPLIER ?? 1.0;
+    const globalHealthMultiplier =
+      (GAME_CONFIG.ENEMY.GLOBAL_HEALTH_MULTIPLIER ?? 1.0) *
+      (modifiers.healthMultiplier ?? 1);
 
     // 无尽地图模式：相对于玩家位置生成敌人
     // 在玩家视野外的随机位置生成
@@ -223,7 +252,10 @@ export class EnemyManager {
       radius: Math.floor(typeConfig.radius * radiusScale),
       health: computedMaxHealth,
       maxHealth: computedMaxHealth,
-      speed: Math.min(baseSpeed * speedMultiplier, GAME_CONFIG.ENEMY.MAX_SPEED),
+      speed: Math.min(
+        baseSpeed * speedMultiplier * (modifiers.speedMultiplier ?? 1),
+        GAME_CONFIG.ENEMY.MAX_SPEED * Math.max(1, modifiers.speedMultiplier ?? 1)
+      ),
       angle: 0,
       type,
     };
