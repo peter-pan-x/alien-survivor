@@ -1787,19 +1787,32 @@ export class GameEngine {
           highlight: "#b2dfdb",
         };
 
-        const drawIsoCap = (cx: number, cy: number, radius: number, height: number, color: string) => {
+        const drawIsoCap = (
+          cx: number,
+          cy: number,
+          radius: number,
+          height: number,
+          color: string,
+          detailSeed: number
+        ) => {
           this.ctx.fillStyle = adjustColor(colors.outline);
           this.ctx.fillRect(align(cx - radius * 0.44), align(cy - height * 0.14), align(radius * 0.88), align(height * 0.55));
           this.ctx.fillStyle = adjustColor(color);
           this.ctx.beginPath();
           this.ctx.ellipse(align(cx), align(cy - height * 0.32), align(radius), align(radius * 0.48), 0, 0, Math.PI * 2);
           this.ctx.fill();
-          this.ctx.fillStyle = adjustColor(colors.light);
-          this.ctx.fillRect(align(cx - radius * 0.22), align(cy - height * 0.58), pixelSize * 2, pixelSize);
+
+          if (radius > pixelSize * 2.4 && rand(detailSeed) > 0.74) {
+            const glintSize = rand(detailSeed + 1) > 0.72 ? pixelSize * 2 : pixelSize;
+            const glintX = cx - radius * (0.08 + rand(detailSeed + 2) * 0.28);
+            const glintY = cy - height * (0.46 + rand(detailSeed + 3) * 0.18);
+            this.ctx.fillStyle = `rgba(125, 211, 195, ${0.34 + rand(detailSeed + 4) * 0.18})`;
+            this.ctx.fillRect(align(glintX), align(glintY), glintSize, pixelSize);
+          }
         };
 
         const mainH = r * (0.65 + rand(3) * 0.85);
-        drawIsoCap(tree.x, tree.y, r * (0.48 + rand(4) * 0.48), mainH, colors.base);
+        drawIsoCap(tree.x, tree.y, r * (0.48 + rand(4) * 0.48), mainH, colors.base, 120);
         
         const smallCount = 1 + Math.floor(Math.pow(rand(2), 0.58) * 8);
         for (let i = 0; i < smallCount; i++) {
@@ -1808,16 +1821,18 @@ export class GameEngine {
             const sy = tree.y + r * (0.02 + rand(i * 21) * 0.42);
             const sr = r * (0.13 + rand(i + 23) * 0.34);
             
-            drawIsoCap(sx, sy, sr, sr * 1.05, colors.mid);
+            drawIsoCap(sx, sy, sr, sr * 1.05, colors.mid, i * 37 + 180);
             
-            if (rand(i*30) > 0.3) {
-               this.ctx.fillStyle = adjustColor(colors.highlight);
-               this.ctx.fillRect(align(sx), align(sy - sr * 0.45), pixelSize, pixelSize);
+            if (sr > pixelSize * 2.2 && rand(i * 30) > 0.82) {
+               this.ctx.fillStyle = "rgba(94, 234, 212, 0.42)";
+               this.ctx.fillRect(align(sx - sr * 0.12), align(sy - sr * 0.42), pixelSize, pixelSize);
             }
         }
-        
-        this.ctx.fillStyle = adjustColor(colors.highlight);
-        this.ctx.fillRect(align(tree.x - pixelSize), align(tree.y - r * 0.72), pixelSize * 3, pixelSize * 2);
+
+        if (rand(240) > 0.86) {
+          this.ctx.fillStyle = "rgba(153, 246, 228, 0.42)";
+          this.ctx.fillRect(align(tree.x - r * 0.1), align(tree.y - r * 0.62), pixelSize * 2, pixelSize);
+        }
 
       } else if (alienType === 2) {
         const colors = {
