@@ -85,13 +85,16 @@ export class ParticlePool {
    * 渲染所有活跃粒子
    */
   render(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
     for (const p of this.active) {
       const alpha = p.life / p.maxLife;
-      ctx.fillStyle = p.color.replace(")", `, ${alpha})`).replace("rgb", "rgba");
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+      ctx.fillStyle = p.color;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore();
   }
 
   /**
@@ -165,4 +168,3 @@ export class ParticlePool {
     }
   }
 }
-

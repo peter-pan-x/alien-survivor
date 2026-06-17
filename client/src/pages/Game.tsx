@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GameMode, GameState, GameStats } from "../gameTypes";
 import { GameStorage } from "../utils/GameStorage";
 import { VirtualJoystick } from "../utils/VirtualJoystick";
@@ -323,8 +323,8 @@ export default function Game() {
     gameEngineRef.current?.start();
   };
 
-  // 优化：缓存玩家数据，避免频繁调用getPlayer()
-  const playerData = useMemo(() => {
+  // 从 GameEngine 读取当前玩家快照，供 React HUD 使用。
+  const playerData = (() => {
     const player = gameEngineRef.current?.getPlayer();
     if (!player) {
       return {
@@ -363,7 +363,7 @@ export default function Game() {
         level: weapon.level,
       })),
     };
-  }, [gameState, stats]); // 只在游戏状态或统计数据变化时更新
+  })();
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-slate-900">

@@ -33,11 +33,26 @@ export class EnhancedVirtualJoystick {
   private isVibrationSupported: boolean;
   private lastUpdateTime: number = 0;
   private renderAnimation: number = 0;
+  private readonly touchListenerOptions = { passive: false, capture: true };
+  private readonly boundHandleTouchStart: (e: TouchEvent) => void;
+  private readonly boundHandleTouchMove: (e: TouchEvent) => void;
+  private readonly boundHandleTouchEnd: (e: TouchEvent) => void;
+  private readonly boundHandleMouseDown: (e: MouseEvent) => void;
+  private readonly boundHandleMouseMove: (e: MouseEvent) => void;
+  private readonly boundHandleMouseUp: () => void;
+  private readonly boundHandleDeviceChange: (e: Event) => void;
 
   constructor(canvas: HTMLCanvasElement, customConfig?: Partial<JoystickConfig>) {
     this.canvas = canvas;
     this.canvasRect = canvas.getBoundingClientRect();
     this.isVibrationSupported = 'vibrate' in navigator;
+    this.boundHandleTouchStart = this.handleTouchStart.bind(this);
+    this.boundHandleTouchMove = this.handleTouchMove.bind(this);
+    this.boundHandleTouchEnd = this.handleTouchEnd.bind(this);
+    this.boundHandleMouseDown = this.handleMouseDown.bind(this);
+    this.boundHandleMouseMove = this.handleMouseMove.bind(this);
+    this.boundHandleMouseUp = this.handleMouseUp.bind(this);
+    this.boundHandleDeviceChange = this.handleDeviceChange.bind(this) as (e: Event) => void;
     
     // 获取响应式配置
     const responsiveConfig = responsiveManager.getJoystickConfig();
@@ -60,34 +75,22 @@ export class EnhancedVirtualJoystick {
     this.setupEventListeners();
     
     // 监听设备变化
-    window.addEventListener('devicechange' as any, this.handleDeviceChange.bind(this));
+    window.addEventListener('devicechange', this.boundHandleDeviceChange);
   }
 
   private setupEventListeners() {
     // 触摸事件
-    this.canvas.addEventListener("touchstart", this.handleTouchStart.bind(this), { 
-      passive: false,
-      capture: true 
-    });
-    this.canvas.addEventListener("touchmove", this.handleTouchMove.bind(this), { 
-      passive: false,
-      capture: true 
-    });
-    this.canvas.addEventListener("touchend", this.handleTouchEnd.bind(this), { 
-      passive: false,
-      capture: true 
-    });
-    this.canvas.addEventListener("touchcancel", this.handleTouchEnd.bind(this), { 
-      passive: false,
-      capture: true 
-    });
+    this.canvas.addEventListener("touchstart", this.boundHandleTouchStart, this.touchListenerOptions);
+    this.canvas.addEventListener("touchmove", this.boundHandleTouchMove, this.touchListenerOptions);
+    this.canvas.addEventListener("touchend", this.boundHandleTouchEnd, this.touchListenerOptions);
+    this.canvas.addEventListener("touchcancel", this.boundHandleTouchEnd, this.touchListenerOptions);
 
     // 鼠标事件（用于桌面测试）
     if (!responsiveManager.isTouchSupported()) {
-      this.canvas.addEventListener("mousedown", this.handleMouseDown.bind(this));
-      this.canvas.addEventListener("mousemove", this.handleMouseMove.bind(this));
-      this.canvas.addEventListener("mouseup", this.handleMouseUp.bind(this));
-      this.canvas.addEventListener("mouseleave", this.handleMouseUp.bind(this));
+      this.canvas.addEventListener("mousedown", this.boundHandleMouseDown);
+      this.canvas.addEventListener("mousemove", this.boundHandleMouseMove);
+      this.canvas.addEventListener("mouseup", this.boundHandleMouseUp);
+      this.canvas.addEventListener("mouseleave", this.boundHandleMouseUp);
     }
   }
 
@@ -430,17 +433,17 @@ export class EnhancedVirtualJoystick {
    */
   public destroy() {
     // 移除事件监听器
-    this.canvas.removeEventListener("touchstart", this.handleTouchStart.bind(this));
-    this.canvas.removeEventListener("touchmove", this.handleTouchMove.bind(this));
-    this.canvas.removeEventListener("touchend", this.handleTouchEnd.bind(this));
-    this.canvas.removeEventListener("touchcancel", this.handleTouchEnd.bind(this));
-    this.canvas.removeEventListener("mousedown", this.handleMouseDown.bind(this));
-    this.canvas.removeEventListener("mousemove", this.handleMouseMove.bind(this));
-    this.canvas.removeEventListener("mouseup", this.handleMouseUp.bind(this));
-    this.canvas.removeEventListener("mouseleave", this.handleMouseUp.bind(this));
+    this.canvas.removeEventListener("touchstart", this.boundHandleTouchStart, true);
+    this.canvas.removeEventListener("touchmove", this.boundHandleTouchMove, true);
+    this.canvas.removeEventListener("touchend", this.boundHandleTouchEnd, true);
+    this.canvas.removeEventListener("touchcancel", this.boundHandleTouchEnd, true);
+    this.canvas.removeEventListener("mousedown", this.boundHandleMouseDown);
+    this.canvas.removeEventListener("mousemove", this.boundHandleMouseMove);
+    this.canvas.removeEventListener("mouseup", this.boundHandleMouseUp);
+    this.canvas.removeEventListener("mouseleave", this.boundHandleMouseUp);
     
     // 移除设备变化监听器
-    window.removeEventListener('devicechange' as any, this.handleDeviceChange.bind(this));
+    window.removeEventListener('devicechange', this.boundHandleDeviceChange);
     
     // 清理状态
     this.deactivateJoystick();

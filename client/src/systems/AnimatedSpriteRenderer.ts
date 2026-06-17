@@ -60,6 +60,22 @@ export class AnimatedSpriteRenderer {
     ctx.translate(-x, -y);
     ctx.globalAlpha = transform.alpha;
 
+    ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
+    const shadowOffset = Math.max(2, Math.floor(pixelSize * 0.45));
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) {
+        const char = frame.pixels[row][col];
+        if (char === " " || frame.colors[char] === "transparent") continue;
+
+        ctx.fillRect(
+          Math.round(offsetX + col * pixelSize + shadowOffset),
+          Math.round(offsetY + row * pixelSize + shadowOffset),
+          pixelSize,
+          pixelSize
+        );
+      }
+    }
+
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
         const char = frame.pixels[row][col];
@@ -70,8 +86,8 @@ export class AnimatedSpriteRenderer {
 
         ctx.fillStyle = color;
         ctx.fillRect(
-          offsetX + col * pixelSize,
-          offsetY + row * pixelSize,
+          Math.round(offsetX + col * pixelSize),
+          Math.round(offsetY + row * pixelSize),
           pixelSize,
           pixelSize
         );

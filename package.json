@@ -2,13 +2,14 @@
   "name": "alien-survivor",
   "version": "2.0.0",
   "type": "module",
-  "description": "一款顶部视角的无限流射击游戏，在异星球上对抗无尽的怪物！",
+  "description": "异星幸存者 - 45度鸟瞰像素风幸存者射击游戏",
   "main": "index.js",
   "scripts": {
     "dev": "vite",
     "start": "vite --open",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "check": "npm run lint && npm run type-check && npm run test && npm run build",
     "test": "vitest run",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "type-check": "tsc --noEmit"
@@ -96,7 +97,7 @@
     "type": "git",
     "url": "https://github.com/peter-pan-x/alien-survivor.git"
   },
-  "homepage": "https://peter-pan-x.github.io/alien-survivor/",
+  "homepage": "https://alien-survivor.vercel.app/",
   "bugs": {
     "url": "https://github.com/peter-pan-x/alien-survivor/issues"
   }

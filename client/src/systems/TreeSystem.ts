@@ -14,21 +14,21 @@ export interface TreeConfig {
 
 export const TREE_CONFIGS: Record<'small' | 'medium' | 'large', TreeConfig> = {
   small: {
-    radius: 15, // 缩小：20 -> 15，增加与大树的差异
-    density: 2.5,
+    radius: 12,
+    density: 2.2,
   },
   medium: {
-    radius: 35, // 增大：30 -> 35
-    density: 1.0,
+    radius: 34,
+    density: 0.9,
   },
   large: {
-    radius: 65, // 大幅增大：45 -> 65，形成明显的大树
-    density: 0.6,
+    radius: 78,
+    density: 0.42,
   },
 };
 
-// 小树林生成概率（每生成一棵树，有该概率额外生成1-2棵邻近树形成树林）
-export const GROVE_CHANCE = 0.25;
+// 小树林生成概率（每生成一棵树，有该概率额外生成一组邻近植物/矿物）
+export const GROVE_CHANCE = 0.34;
 
 // 碰撞半径乘数：只有中心树干部分阻挡走位
 // 视觉半径 vs 碰撞半径 = 1 : 0.35
@@ -67,15 +67,17 @@ export class TreeSystem {
     const attempts = needCount * 4;
 
     for (let i = 0; i < attempts && newTrees.length < needCount; i++) {
-      // 随机位置
-      const x = centerX + (Math.random() - 0.5) * radius * 2;
-      const y = centerY + (Math.random() - 0.5) * radius * 2;
+      const clusterBias = Math.random();
+      const angle = Math.random() * Math.PI * 2;
+      const distance = clusterBias < 0.62
+        ? Math.pow(Math.random(), 1.7) * radius
+        : (0.35 + Math.random() * 0.65) * radius;
+      const x = centerX + Math.cos(angle) * distance + (Math.random() - 0.5) * radius * 0.18;
+      const y = centerY + Math.sin(angle) * distance + (Math.random() - 0.5) * radius * 0.18;
 
       // 随机选择树木类型
       const type = this.selectTreeType();
-      const config = TREE_CONFIGS[type];
-      // 简单的随机半径
-      const randRadius = Math.floor(config.radius * (0.9 + Math.random() * 0.2));
+      const randRadius = this.rollTreeRadius(type);
 
       // 检查是否与现有树木重叠
       const tooClose = this.trees.some((tree) => {
@@ -101,27 +103,29 @@ export class TreeSystem {
           y,
           radius: randRadius,
           type,
-          shade: 0.8 + Math.random() * 0.2,
+          shade: 0.68 + Math.random() * 0.48,
           seed: Math.random(),
         };
         newTrees.push(mainTree);
 
-        // 小树林机制：有概率在主树周围生成1-2棵附属树
+        // 小树林机制：有概率在主树周围生成大小差异更明显的附属植物/矿物
         if (Math.random() < GROVE_CHANCE) {
-          const groveCount = 1 + Math.floor(Math.random() * 2); // 1-2棵
+          const groveCount = 1 + Math.floor(Math.pow(Math.random(), 0.65) * 5);
+          const groveSpread = randRadius * (1.15 + Math.random() * 1.75);
           for (let g = 0; g < groveCount; g++) {
             // 在主树周围随机位置生成较小的树
             const angle = Math.random() * Math.PI * 2;
-            const dist = randRadius * (1.2 + Math.random() * 0.8); // 紧邻主树
+            const dist = groveSpread * (0.35 + Math.pow(Math.random(), 1.4));
             const gx = x + Math.cos(angle) * dist;
-            const gy = y + Math.sin(angle) * dist;
+            const gy = y + Math.sin(angle) * dist * 0.72;
             
             // 附属树类型：比主树小一档或相同
-            const groveType = type === 'large' ? (Math.random() < 0.5 ? 'medium' : 'small') 
-                            : type === 'medium' ? 'small' 
-                            : 'small';
-            const groveConfig = TREE_CONFIGS[groveType];
-            const groveRadius = Math.floor(groveConfig.radius * (0.7 + Math.random() * 0.4));
+            const groveType = type === 'large'
+              ? (Math.random() < 0.28 ? 'large' : Math.random() < 0.62 ? 'medium' : 'small')
+              : type === 'medium'
+                ? (Math.random() < 0.2 ? 'medium' : 'small')
+                : 'small';
+            const groveRadius = Math.floor(this.rollTreeRadius(groveType) * (0.62 + Math.random() * 0.52));
 
             // 检查附属树是否与现有树重叠
             const groveTooClose = [...this.trees, ...newTrees].some((tree) => {
@@ -138,7 +142,7 @@ export class TreeSystem {
                 y: gy,
                 radius: groveRadius,
                 type: groveType,
-                shade: 0.75 + Math.random() * 0.25,
+                shade: 0.62 + Math.random() * 0.55,
                 seed: Math.random(),
               });
             }
@@ -155,10 +159,20 @@ export class TreeSystem {
    */
   private selectTreeType(): 'small' | 'medium' | 'large' {
     const rand = Math.random();
-    // 优化：大中小树更均衡的分布
-    if (rand < 0.3) return 'large';  // 30% 大树
-    if (rand < 0.6) return 'medium'; // 30% 中树
-    return 'small';                   // 40% 小树
+    if (rand < 0.18) return 'large';
+    if (rand < 0.46) return 'medium';
+    return 'small';
+  }
+
+  private rollTreeRadius(type: 'small' | 'medium' | 'large'): number {
+    const base = TREE_CONFIGS[type].radius;
+    if (type === 'large') {
+      return Math.floor(base * (0.72 + Math.pow(Math.random(), 0.55) * 0.72));
+    }
+    if (type === 'medium') {
+      return Math.floor(base * (0.68 + Math.random() * 0.72));
+    }
+    return Math.floor(base * (0.62 + Math.random() * 1.15));
   }
 
   /**
@@ -300,4 +314,3 @@ export class TreeSystem {
     }
   }
 }
-

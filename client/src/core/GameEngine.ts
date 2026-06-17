@@ -10,6 +10,7 @@ import { BackgroundRenderer } from "../utils/BackgroundRenderer";
 import { PerformanceMonitor } from "../utils/PerformanceMonitor";
 import { MathUtils } from "../utils/MathUtils";
 import { Camera } from "../utils/Camera";
+import { CombatEffectRenderer } from "../utils/CombatEffectRenderer";
 import { SkillSystem } from "../systems/SkillSystem";
 import { PixelRenderer, PixelSprites, PixelColors } from "../utils/PixelRenderer";
 import { AudioSystem } from "../systems/AudioSystem";
@@ -1254,8 +1255,7 @@ export class GameEngine {
           // 冰冻效果：击中后冻结敌人
           if (this.player.hasFrostShot && this.player.frostDuration) {
             enemy.frozenUntil = Date.now() + this.player.frostDuration;
-            // 冰冻粒子效果
-            this.particlePool.createParticles(enemy.x, enemy.y, "#00bfff", 4);
+            CombatEffectRenderer.createFrostImpact(this.particlePool, enemy.x, enemy.y, enemy.radius);
           }
 
           // 燃烧效果：击中后施加燃烧DOT
@@ -1742,13 +1742,13 @@ export class GameEngine {
         this.ctx.fillStyle = adjustColor(colors.base);
         this.ctx.fillRect(align(tree.x - rootW / 2 + pixelSize), align(tree.y + r * 0.12), rootW - pixelSize * 2, Math.max(pixelSize, rootH - pixelSize));
 
-        const tentacleCount = 4 + Math.floor(rand(1) * 3);
+        const tentacleCount = 2 + Math.floor(Math.pow(rand(1), 0.62) * 7);
         for (let i = 0; i < tentacleCount; i++) {
            const side = i % 2 === 0 ? -1 : 1;
-           let cx = tree.x + side * r * (0.12 + rand(i) * 0.28);
-           let cy = tree.y + r * 0.06;
-           const length = r * (0.95 + rand(i + 10) * 0.52);
-           const segs = 7;
+           let cx = tree.x + side * r * (0.08 + rand(i) * 0.42);
+           let cy = tree.y + r * (0.02 + rand(i + 4) * 0.14);
+           const length = r * (0.7 + Math.pow(rand(i + 10), 0.7) * 0.95);
+           const segs = 5 + Math.floor(rand(i + 11) * 5);
            
            for (let j = 0; j < segs; j++) {
               const progress = j / segs;
@@ -1798,15 +1798,15 @@ export class GameEngine {
           this.ctx.fillRect(align(cx - radius * 0.22), align(cy - height * 0.58), pixelSize * 2, pixelSize);
         };
 
-        const mainH = r * 0.95;
-        drawIsoCap(tree.x, tree.y, r * 0.72, mainH, colors.base);
+        const mainH = r * (0.65 + rand(3) * 0.85);
+        drawIsoCap(tree.x, tree.y, r * (0.48 + rand(4) * 0.48), mainH, colors.base);
         
-        const smallCount = 3 + Math.floor(rand(2) * 3);
+        const smallCount = 1 + Math.floor(Math.pow(rand(2), 0.58) * 8);
         for (let i = 0; i < smallCount; i++) {
             const side = i % 2 === 0 ? -1 : 1;
-            const sx = tree.x + side * r * (0.25 + rand(i * 20) * 0.45);
-            const sy = tree.y + r * (0.1 + rand(i * 21) * 0.28);
-            const sr = r * 0.28 * (0.8 + rand(i));
+            const sx = tree.x + side * r * (0.16 + rand(i * 20) * 0.72);
+            const sy = tree.y + r * (0.02 + rand(i * 21) * 0.42);
+            const sr = r * (0.13 + rand(i + 23) * 0.34);
             
             drawIsoCap(sx, sy, sr, sr * 1.05, colors.mid);
             
@@ -1862,19 +1862,21 @@ export class GameEngine {
           this.ctx.fillRect(align(cx - pixelSize), align(topY + height * 0.22), pixelSize * 2, pixelSize);
         };
 
-        const crystalCount = 4 + Math.floor(rand(2) * 3); // 4-6个
+        const crystalCount = 1 + Math.floor(Math.pow(rand(2), 0.55) * 9);
         
         for (let i = 0; i < crystalCount; i++) {
           const side = i % 2 === 0 ? -1 : 1;
-          const cx = tree.x + side * r * (0.18 + rand(i + 5) * 0.55);
-          const cy = tree.y + r * (0.12 + rand(i + 7) * 0.25);
-          const size = r * (0.26 + rand(i + 10) * 0.22);
-          const height = r * (0.55 + rand(i + 12) * 0.35);
+          const cx = tree.x + side * r * (0.12 + rand(i + 5) * 0.78);
+          const cy = tree.y + r * (0.02 + rand(i + 7) * 0.42);
+          const size = r * (0.14 + rand(i + 10) * 0.42);
+          const height = r * (0.38 + Math.pow(rand(i + 12), 0.62) * 0.92);
           
           drawCrystal(cx, cy, size, height);
         }
         
-        drawCrystal(tree.x, tree.y, r * 0.62, r * 1.15);
+        if (rand(90) > 0.18) {
+          drawCrystal(tree.x, tree.y, r * (0.44 + rand(91) * 0.36), r * (0.82 + rand(92) * 0.78));
+        }
         
         const baseRadius = r * 0.3;
         this.ctx.fillStyle = adjustColor("#05212a");
@@ -1957,34 +1959,13 @@ export class GameEngine {
         drawY,
         enemy.type,
         animTime,
-        5,
+        6,
         enemyState
       );
 
-      // 冰冻特效：蓝色染色 + 飘落雪花（范围与敌人大小一致）
+      // 冰冻特效：像素冰壳 + 霜环 + 冰晶颗粒
       if (enemy.frozenUntil && Date.now() < enemy.frozenUntil) {
-        const now = Date.now();
-        const r = enemy.radius;
-        
-        // 蓝色染色覆盖（让怪物看起来被冻住）
-        this.ctx.fillStyle = "rgba(100, 180, 255, 0.35)";
-        this.ctx.beginPath();
-        this.ctx.arc(enemy.x, enemy.y, r, 0, Math.PI * 2);
-        this.ctx.fill();
-        
-        // 飘落的小雪花粒子（范围限制在敌人范围内）
-        for (let i = 0; i < 2; i++) {
-          const phase = ((now * 0.0015 + i * 120) % 1);
-          const px = enemy.x + Math.sin(now * 0.002 + i * 2) * r * 0.3;
-          const py = enemy.y - r * 0.4 + phase * r * 0.8;
-          
-          // 雪花大小随下落渐小
-          const size = 2 * (1 - phase * 0.5);
-          const alpha = 0.7 * (1 - phase * 0.3);
-          
-          this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-          this.ctx.fillRect(px - size / 2, py - size / 2, size, size);
-        }
+        CombatEffectRenderer.drawFrozenEnemyOverlay(this.ctx, enemy.x, enemy.y, enemy.radius, enemy.frozenUntil);
       }
 
       // 燃烧特效：简单的跳动小火苗粒子
@@ -2060,7 +2041,7 @@ export class GameEngine {
         death.y,
         death.type,
         animTime,
-        5,
+        6,
         "death"
       );
       this.ctx.restore();
@@ -2232,20 +2213,23 @@ export class GameEngine {
 
     // 渲染玩家子弹 - 45 度能量弹片
     for (const bullet of this.bulletPool.getActive()) {
-      this.drawEnergyShard(
+      CombatEffectRenderer.drawEnergyShard(
+        this.ctx,
         bullet.x,
         bullet.y,
         bullet.radius,
         bullet.vx,
         bullet.vy,
         playerBulletCore,
-        playerBulletEdge
+        playerBulletEdge,
+        this.player.hasFrostShot ? "frost" : this.player.hasFlameAttack ? "flame" : "normal"
       );
     }
 
     // 渲染敌人子弹 - 紫红孢子弹
     for (const bullet of this.enemyBulletPool.getActive()) {
-      this.drawEnemySporeBullet(
+      CombatEffectRenderer.drawEnemySporeBullet(
+        this.ctx,
         bullet.x,
         bullet.y,
         bullet.radius,
@@ -2254,68 +2238,6 @@ export class GameEngine {
       );
     }
 
-    this.ctx.restore();
-  }
-
-  private drawEnergyShard(
-    x: number,
-    y: number,
-    radius: number,
-    vx: number,
-    vy: number,
-    coreColor: string,
-    edgeColor: string
-  ): void {
-    const angle = Math.atan2(vy, vx);
-    const length = Math.max(12, radius * 5.4);
-    const thickness = Math.max(4, radius * 1.45);
-    const pixel = 2;
-
-    this.ctx.save();
-    this.ctx.translate(x, y);
-    this.ctx.rotate(angle);
-    this.ctx.imageSmoothingEnabled = false;
-
-    this.ctx.fillStyle = "rgba(2, 6, 23, 0.34)";
-    this.ctx.fillRect(-length * 0.38, thickness * 0.95, length * 0.72, pixel);
-
-    this.ctx.fillStyle = edgeColor;
-    this.ctx.fillRect(-length * 0.52, -pixel, length * 0.72, pixel * 2);
-    this.ctx.fillRect(length * 0.1, -thickness * 0.5, length * 0.42, thickness);
-
-    this.ctx.fillStyle = coreColor;
-    this.ctx.fillRect(-length * 0.12, -pixel * 2, length * 0.42, pixel * 4);
-    this.ctx.fillRect(length * 0.38, -pixel, pixel * 3, pixel * 2);
-
-    this.ctx.fillStyle = "#e0f2fe";
-    this.ctx.fillRect(-length * 0.02, -pixel, pixel * 2, pixel);
-    this.ctx.restore();
-  }
-
-  private drawEnemySporeBullet(
-    x: number,
-    y: number,
-    radius: number,
-    vx: number,
-    vy: number
-  ): void {
-    const angle = Math.atan2(vy, vx);
-    const size = Math.max(8, radius * 3.2);
-
-    this.ctx.save();
-    this.ctx.translate(x, y);
-    this.ctx.rotate(angle);
-    this.ctx.imageSmoothingEnabled = false;
-
-    this.ctx.fillStyle = "rgba(0, 0, 0, 0.32)";
-    this.ctx.fillRect(-size * 0.5, size * 0.45, size, 2);
-
-    this.ctx.fillStyle = "#4c0519";
-    this.ctx.fillRect(-size * 0.45, -size * 0.35, size * 0.85, size * 0.7);
-    this.ctx.fillStyle = "#e11d48";
-    this.ctx.fillRect(-size * 0.28, -size * 0.22, size * 0.56, size * 0.44);
-    this.ctx.fillStyle = "#fb7185";
-    this.ctx.fillRect(size * 0.04, -size * 0.22, 3, 3);
     this.ctx.restore();
   }
 
@@ -2380,7 +2302,7 @@ export class GameEngine {
       drawY,
       animTime,
       isMoving,
-      4,
+      5,
       playerState
     );
 
