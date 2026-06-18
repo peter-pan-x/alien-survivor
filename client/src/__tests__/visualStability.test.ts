@@ -69,7 +69,7 @@ describe("background ecology configuration", () => {
 });
 
 describe("player animation layering", () => {
-  it("keeps the walking stride active while the weapon is firing", () => {
+  it("uses the established shooting silhouette and wide foot stance", () => {
     const renderer = new AnimatedSpriteRenderer() as unknown as {
       getPlayerFrame: (
         time: number,
@@ -78,14 +78,12 @@ describe("player animation layering", () => {
       ) => AnimatedSpriteFrame;
     };
 
-    const movingAttackA = renderer.getPlayerFrame(0.2, true, "attack");
-    const movingAttackB = renderer.getPlayerFrame(0.4, true, "attack");
-    const standingAttack = renderer.getPlayerFrame(0.2, false, "attack");
+    const movingAttack = renderer.getPlayerFrame(0.2, true, "attack");
+    const standingAttack = renderer.getPlayerFrame(0.4, false, "attack");
 
-    expect(movingAttackA.pixels[8].join("")).not.toBe(movingAttackB.pixels[8].join(""));
-    expect(movingAttackA.pixels.flat()).toContain("p");
-    expect(movingAttackB.pixels.flat()).toContain("p");
-    expect(standingAttack.pixels[8].join("").trim()).toBe("aa  aa");
+    expect(movingAttack.pixels).toEqual(standingAttack.pixels);
+    expect(movingAttack.pixels.flat()).toContain("p");
+    expect(movingAttack.pixels[8].join("").trim()).toBe("aa    aa");
   });
 });
 
