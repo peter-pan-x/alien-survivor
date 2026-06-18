@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AnimatedSpriteRenderer, type AnimatedSpriteFrame } from "../systems/AnimatedSpriteRenderer";
 import { BACKGROUND_ECOLOGY } from "../utils/BackgroundEcologyConfig";
+import { CombatEffectRenderer } from "../utils/CombatEffectRenderer";
 
 interface ListenerCall {
   type: string;
@@ -63,6 +65,58 @@ describe("background ecology configuration", () => {
     expect(BACKGROUND_ECOLOGY.microGrowth.activeThreshold).toBeGreaterThanOrEqual(0.64);
     expect(BACKGROUND_ECOLOGY.midground.activeThreshold).toBeGreaterThanOrEqual(0.56);
     expect(BACKGROUND_ECOLOGY.microGrowth.maxSprouts).toBeLessThanOrEqual(5);
+  });
+});
+
+describe("player animation layering", () => {
+  it("keeps the walking stride active while the weapon is firing", () => {
+    const renderer = new AnimatedSpriteRenderer() as unknown as {
+      getPlayerFrame: (
+        time: number,
+        isMoving: boolean,
+        state: "idle" | "move" | "attack" | "hit" | "death"
+      ) => AnimatedSpriteFrame;
+    };
+
+    const movingAttackA = renderer.getPlayerFrame(0.2, true, "attack");
+    const movingAttackB = renderer.getPlayerFrame(0.4, true, "attack");
+    const standingAttack = renderer.getPlayerFrame(0.2, false, "attack");
+
+    expect(movingAttackA.pixels[8].join("")).not.toBe(movingAttackB.pixels[8].join(""));
+    expect(movingAttackA.pixels.flat()).toContain("p");
+    expect(movingAttackB.pixels.flat()).toContain("p");
+    expect(standingAttack.pixels[8].join("").trim()).toBe("aa  aa");
+  });
+});
+
+describe("frozen enemy rendering", () => {
+  it("builds the ice shell from angular diamond facets", () => {
+    const lineTo = vi.fn();
+    const closePath = vi.fn();
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo,
+      closePath,
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      imageSmoothingEnabled: true,
+      lineJoin: "round",
+      fillStyle: "",
+      strokeStyle: "",
+      lineWidth: 1,
+    } as unknown as CanvasRenderingContext2D;
+
+    CombatEffectRenderer.drawFrozenEnemyOverlay(ctx, 100, 100, 20, Date.now() + 1000);
+
+    const points = lineTo.mock.calls as Array<[number, number]>;
+    expect(points.some(([x]) => x > 120)).toBe(true);
+    expect(points.some(([x]) => x < 80)).toBe(true);
+    expect(points.some(([, y]) => y < 80)).toBe(true);
+    expect(points.some(([, y]) => y > 116)).toBe(true);
+    expect(closePath).toHaveBeenCalledTimes(8);
   });
 });
 

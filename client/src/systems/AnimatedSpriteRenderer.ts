@@ -400,6 +400,37 @@ export class AnimatedSpriteRenderer {
     }
 
     if (state === "attack") {
+      const stride = Math.sin(time * 10) > 0;
+
+      if (isMoving) {
+        return this.frame(
+          stride
+            ? [
+                "    oooo     ",
+                "  oobbbboo   ",
+                " obcwwccbo   ",
+                " obccccdbo   ",
+                "  obbbbbbo pp",
+                "oopmmmbo  pcp",
+                "    mmmb  pp ",
+                "  oa m ao    ",
+                " aa      aa  ",
+              ]
+            : [
+                "    oooo     ",
+                "  oobbbboo   ",
+                " obcwwccbo   ",
+                " obccccdbo   ",
+                "  obbbbbbo pp",
+                "   opmmbo pcp",
+                "   o mmmb pp ",
+                "   oa m ao   ",
+                "  aa      aa ",
+              ],
+          PixelColors.player
+        );
+      }
+
       return this.frame(
         [
           "    oooo     ",
@@ -410,7 +441,7 @@ export class AnimatedSpriteRenderer {
           " oopmmmbo pcp",
           "o   mmmb  pp ",
           "   oammao    ",
-          "  aa    aa   ",
+          "   aa  aa    ",
         ],
         PixelColors.player
       );

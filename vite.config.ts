@@ -1,17 +1,41 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "path";
 import { defineConfig } from "vite";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const packageVersion = JSON.parse(
+  readFileSync(path.resolve(__dirname, "package.json"), "utf8"),
+) as { version: string };
+
+function resolveCommitId() {
+  const vercelCommit = process.env.VERCEL_GIT_COMMIT_SHA;
+  if (vercelCommit) return vercelCommit.slice(0, 7);
+
+  try {
+    return execFileSync("git", ["rev-parse", "--short=7", "HEAD"], {
+      cwd: __dirname,
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+const appVersion = `v${packageVersion.version} · ${resolveCommitId()}`;
 
 const plugins = [react(), tailwindcss()];
 
 export default defineConfig({
   base: '/',
   plugins,
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "client", "src"),

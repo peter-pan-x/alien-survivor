@@ -391,6 +391,29 @@
   text-transform: uppercase;
 }
 
+.pixelx-brand-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 7px;
+}
+
+.pixelx-brand-meta p {
+  margin: 0;
+}
+
+.pixelx-version {
+  color: #6ee7b7;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 4px 6px;
+  border: 1px solid rgba(110, 231, 183, 0.45);
+  background: rgba(4, 47, 46, 0.68);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .pixelx-orbit-mark {
   width: 72px;
   height: 72px;
@@ -1216,6 +1239,16 @@
     font-size: 9px;
   }
 
+  .pixelx-brand-meta {
+    gap: 8px;
+    margin-top: 5px;
+  }
+
+  .pixelx-version {
+    font-size: 8px;
+    padding: 3px 4px;
+  }
+
   .pixelx-orbit-mark {
     width: 48px;
     height: 48px;
@@ -1386,13 +1419,20 @@
 
   .pixelx-skill-card {
     min-height: auto;
-    grid-template-columns: 54px 1fr;
+    grid-template-columns: 76px minmax(0, 1fr);
+    align-items: start;
     justify-items: stretch;
     text-align: left;
   }
 
   .pixelx-skill-card .pixelx-skill-copy {
+    min-width: 0;
     text-align: left;
+  }
+
+  .pixelx-skill-card .pixelx-skill-copy strong,
+  .pixelx-skill-card .pixelx-skill-copy p {
+    overflow-wrap: anywhere;
   }
 
   .pixelx-skill-card .pixelx-skill-copy em {

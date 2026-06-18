@@ -239,7 +239,12 @@ function MainMenu({
           </div>
           <div>
             <h1>异星幸存者</h1>
-            <p>ALIEN SURVIVOR</p>
+            <div className="pixelx-brand-meta">
+              <p>ALIEN SURVIVOR</p>
+              <span className="pixelx-version" title="Build version">
+                {__APP_VERSION__}
+              </span>
+            </div>
           </div>
         </div>
 
