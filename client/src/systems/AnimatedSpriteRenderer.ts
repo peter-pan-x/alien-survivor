@@ -35,7 +35,10 @@ export class AnimatedSpriteRenderer {
     state: EntityAnimationState = isMoving ? "move" : "idle"
   ): void {
     const frame = this.getPlayerFrame(time, isMoving, state);
-    this.drawFrame(ctx, frame, x, y, time, pixelSize, state);
+    const transformState = state === "hit" || state === "death"
+      ? state
+      : isMoving ? "move" : "idle";
+    this.drawFrame(ctx, frame, x, y, time, pixelSize, transformState);
   }
 
   private drawFrame(
@@ -382,9 +385,8 @@ export class AnimatedSpriteRenderer {
   }
 
   private getPlayerFrame(time: number, isMoving: boolean, state: EntityAnimationState): AnimatedSpriteFrame {
-    if (state === "hit") {
-      return this.frame(
-        [
+    const upperBody = state === "hit"
+      ? [
           "    oooo     ",
           "  oobbbboo   ",
           " obcwwccbo   ",
@@ -392,16 +394,8 @@ export class AnimatedSpriteRenderer {
           "  obbbbbbo   ",
           " oopmmmboo   ",
           "o   mmmb  p  ",
-          "   oammao    ",
-          "  aa    aa   ",
-        ],
-        PixelColors.player
-      );
-    }
-
-    if (state === "attack") {
-      return this.frame(
-        [
+        ]
+      : state === "attack" ? [
           "    oooo     ",
           "  oobbbboo   ",
           " obcwwccbo   ",
@@ -409,16 +403,8 @@ export class AnimatedSpriteRenderer {
           "  obbbbbbo pp",
           " oopmmmbo pcp",
           "o   mmmb  pp ",
-          "   oammao    ",
-          "  aa    aa   ",
-        ],
-        PixelColors.player
-      );
-    }
-
-    if (!isMoving) {
-      return this.frame(
-        [
+        ]
+      : [
           "    oooo     ",
           "  oobbbboo   ",
           " obcwwccbo   ",
@@ -426,40 +412,25 @@ export class AnimatedSpriteRenderer {
           "  obbbbbbo   ",
           "  opmmmmpo   ",
           "  o mmmm o   ",
-          "   oammao    ",
-          "   aa  aa    ",
-        ],
-        PixelColors.player
-      );
-    }
+        ];
 
-    const stride = Math.sin(time * 10) > 0;
     return this.frame(
-      stride
-        ? [
-            "    oooo     ",
-            "  oobbbboo   ",
-            " obcwwccbo   ",
-            " obccccdbo   ",
-            "  obbbbbbo   ",
-            "oopmmmmpo    ",
-            "   mmmm o    ",
-            "  oa m ao    ",
-            " aa      aa  ",
-          ]
-        : [
-            "    oooo     ",
-            "  oobbbboo   ",
-            " obcwwccbo   ",
-            " obccccdbo   ",
-            "  obbbbbbo   ",
-            "   opmmmmpoo ",
-            "   o mmmm    ",
-            "   oa m ao   ",
-            "  aa      aa ",
-          ],
+      [...upperBody, ...this.getPlayerLegRows(time, isMoving)],
       PixelColors.player
     );
+  }
+
+  private getPlayerLegRows(time: number, isMoving: boolean): readonly string[] {
+    const standingLegs = ["   oammao    ", "   aa  aa    ", "   aa  aa    "] as const;
+    if (!isMoving) return standingLegs;
+
+    const phase = Math.floor(time * 5.2) % 2;
+    const walkCycle = [
+      standingLegs,
+      ["   oammao    ", "   aa  aa    ", "  aa    aa   "],
+    ] as const;
+
+    return walkCycle[phase];
   }
 }
 

@@ -69,7 +69,7 @@ describe("background ecology configuration", () => {
 });
 
 describe("player animation layering", () => {
-  it("uses the established shooting silhouette and wide foot stance", () => {
+  it("keeps shooting in the upper body while the legs follow movement", () => {
     const renderer = new AnimatedSpriteRenderer() as unknown as {
       getPlayerFrame: (
         time: number,
@@ -78,27 +78,41 @@ describe("player animation layering", () => {
       ) => AnimatedSpriteFrame;
     };
 
-    const movingAttack = renderer.getPlayerFrame(0.2, true, "attack");
-    const standingAttack = renderer.getPlayerFrame(0.4, false, "attack");
+    const movingStanding = renderer.getPlayerFrame(0.02, true, "move");
+    const movingWide = renderer.getPlayerFrame(0.3, true, "move");
+    const movingStandingAgain = renderer.getPlayerFrame(0.52, true, "move");
+    const movingAttackStanding = renderer.getPlayerFrame(0.02, true, "attack");
+    const movingAttackWide = renderer.getPlayerFrame(0.3, true, "attack");
+    const movingHitWide = renderer.getPlayerFrame(0.3, true, "hit");
+    const standingAttack = renderer.getPlayerFrame(0.2, false, "attack");
+    const standingIdle = renderer.getPlayerFrame(0.2, false, "idle");
 
-    expect(movingAttack.pixels).toEqual(standingAttack.pixels);
-    expect(movingAttack.pixels.flat()).toContain("p");
-    expect(movingAttack.pixels[8].join("").trim()).toBe("aa    aa");
+    expect(movingAttackStanding.pixels.slice(7)).toEqual(movingStanding.pixels.slice(7));
+    expect(movingAttackWide.pixels.slice(7)).toEqual(movingWide.pixels.slice(7));
+    expect(movingHitWide.pixels.slice(7)).toEqual(movingWide.pixels.slice(7));
+    expect(movingAttackStanding.pixels.slice(0, 7)).not.toEqual(movingStanding.pixels.slice(0, 7));
+    expect(standingAttack.pixels.slice(7)).toEqual(standingIdle.pixels.slice(7));
+    expect(movingStanding.pixels.slice(7)).toEqual(standingIdle.pixels.slice(7));
+    expect(movingStanding.pixels[9]).not.toEqual(movingWide.pixels[9]);
+    expect(movingStandingAgain.pixels[9]).toEqual(movingStanding.pixels[9]);
   });
 });
 
 describe("frozen enemy rendering", () => {
-  it("builds the ice shell from angular diamond facets", () => {
+  it("keeps the pixel frost glaze inside the enemy footprint", () => {
     const lineTo = vi.fn();
+    const moveTo = vi.fn();
     const closePath = vi.fn();
+    const fillRect = vi.fn();
     const ctx = {
       save: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
-      moveTo: vi.fn(),
+      moveTo,
       lineTo,
       closePath,
       fill: vi.fn(),
+      fillRect,
       stroke: vi.fn(),
       imageSmoothingEnabled: true,
       lineJoin: "round",
@@ -109,12 +123,11 @@ describe("frozen enemy rendering", () => {
 
     CombatEffectRenderer.drawFrozenEnemyOverlay(ctx, 100, 100, 20, Date.now() + 1000);
 
-    const points = lineTo.mock.calls as Array<[number, number]>;
-    expect(points.some(([x]) => x > 120)).toBe(true);
-    expect(points.some(([x]) => x < 80)).toBe(true);
-    expect(points.some(([, y]) => y < 80)).toBe(true);
-    expect(points.some(([, y]) => y > 116)).toBe(true);
-    expect(closePath).toHaveBeenCalledTimes(8);
+    const points = [...moveTo.mock.calls, ...lineTo.mock.calls] as Array<[number, number]>;
+    expect(points.every(([px]) => px >= 82 && px <= 118)).toBe(true);
+    expect(points.every(([, py]) => py >= 82 && py <= 116)).toBe(true);
+    expect(closePath).toHaveBeenCalledTimes(4);
+    expect(fillRect).toHaveBeenCalledTimes(2);
   });
 });
 

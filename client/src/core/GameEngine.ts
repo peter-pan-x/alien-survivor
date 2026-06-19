@@ -2280,7 +2280,9 @@ export class GameEngine {
     // 2. 检测玩家是否在移动
     const isMoving = this.joystickInput.x !== 0 || this.joystickInput.y !== 0 ||
                     this.keys.has("w") || this.keys.has("s") ||
-                    this.keys.has("a") || this.keys.has("d");
+                    this.keys.has("a") || this.keys.has("d") ||
+                    this.keys.has("arrowup") || this.keys.has("arrowdown") ||
+                    this.keys.has("arrowleft") || this.keys.has("arrowright");
 
     // 3. 上下颠簸动画 - 模拟走路时的起伏
     const bounceY = isMoving ? this.animSystem.getPlayerWalkBounce() * 0.5 : 0; // 减小幅度
@@ -2288,13 +2290,12 @@ export class GameEngine {
     // 4. 射击后坐力动画
     const timeSinceLastShot = now - this.lastShotTime;
     const hasRecoil = timeSinceLastShot < 100; // 射击后100ms内有后坐力
-    const recoil = hasRecoil ? this.animSystem.getPlayerShootRecoil() : { x: 0, y: 0 };
     const playerState: EntityAnimationState =
       now - this.lastDamageTime < 180 ? "hit" : hasRecoil ? "attack" : isMoving ? "move" : "idle";
 
-    // 应用变换到玩家位置
-    const drawX = this.player.x + recoil.x;
-    const drawY = this.player.y + recoil.y + bounceY;
+    // 射击仅改变上半身帧，移动起伏和腿部步态保持独立。
+    const drawX = this.player.x;
+    const drawY = this.player.y + bounceY;
 
     this.drawIsoShadow(this.player.x, this.player.y + this.player.radius * 0.56, this.player.radius * 0.9, this.player.radius * 0.24, 0.36);
 
@@ -2302,7 +2303,8 @@ export class GameEngine {
     const finalScale = breathingScale;
 
     // 使用新的动画精灵渲染器 - 让玩家的手臂真正摆动
-    const animTime = this.animSystem.getTime();
+    // 玩家步态直接使用真实秒数，持续移动时不依赖按键重复事件。
+    const animTime = now / 1000;
 
     // 临时应用缩放变换
     this.ctx.save();

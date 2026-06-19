@@ -90,19 +90,22 @@ export class CombatEffectRenderer {
     const now = Date.now();
     const remaining = Math.max(0, frozenUntil - now);
     const r = radius;
-    const pulse = (Math.sin(now * 0.009) + 1) * 0.5;
     const thawing = remaining < 450;
-    const halfWidth = r * (1.04 + pulse * 0.025);
-    const top = y - r * (1.08 + pulse * 0.02);
-    const bottom = y + r * 0.92;
-    const centerY = y - r * 0.04;
+    const shimmer = (Math.sin(now * 0.008) + 1) * 0.5;
+    const halfWidth = r * 0.68;
+    const top = y - r * 0.6;
+    const bottom = y + r * 0.64;
+    const left = x - halfWidth;
+    const right = x + halfWidth;
+    const corner = r * 0.2;
+    const pixel = Math.max(2, Math.round(r * 0.11));
 
-    const diamondPath = (scale: number = 1): void => {
+    const iceShard = (cx: number, cy: number, width: number, height: number): void => {
       ctx.beginPath();
-      ctx.moveTo(x, centerY + (top - centerY) * scale);
-      ctx.lineTo(x + halfWidth * scale, centerY);
-      ctx.lineTo(x, centerY + (bottom - centerY) * scale);
-      ctx.lineTo(x - halfWidth * scale, centerY);
+      ctx.moveTo(cx, cy - height);
+      ctx.lineTo(cx + width, cy);
+      ctx.lineTo(cx, cy + height * 0.36);
+      ctx.lineTo(cx - width, cy);
       ctx.closePath();
     };
 
@@ -110,88 +113,52 @@ export class CombatEffectRenderer {
     ctx.imageSmoothingEnabled = false;
     ctx.lineJoin = "miter";
 
-    // Dark cyan back plate separates the ice silhouette from bright enemies.
-    ctx.fillStyle = "rgba(3, 30, 48, 0.46)";
-    diamondPath(1.08);
-    ctx.fill();
-
-    // Four translucent facets make the shell read as a cut crystal.
-    ctx.fillStyle = `rgba(56, 189, 248, ${0.2 + pulse * 0.04})`;
-    diamondPath();
-    ctx.fill();
-
-    ctx.fillStyle = "rgba(186, 230, 253, 0.2)";
+    // A compact frost glaze sits on the creature instead of enclosing it.
+    ctx.fillStyle = `rgba(125, 211, 252, ${0.16 + shimmer * 0.04})`;
     ctx.beginPath();
-    ctx.moveTo(x, top);
-    ctx.lineTo(x + halfWidth, centerY);
-    ctx.lineTo(x + r * 0.08, centerY + r * 0.12);
-    ctx.lineTo(x - r * 0.08, centerY - r * 0.08);
+    ctx.moveTo(x - corner, top);
+    ctx.lineTo(x + corner, top);
+    ctx.lineTo(right, y - r * 0.18);
+    ctx.lineTo(right - r * 0.04, y + r * 0.34);
+    ctx.lineTo(x + corner, bottom);
+    ctx.lineTo(x - corner, bottom);
+    ctx.lineTo(left + r * 0.04, y + r * 0.34);
+    ctx.lineTo(left, y - r * 0.18);
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = "rgba(14, 165, 233, 0.17)";
+    // One pale facet gives the glaze a glassy frozen surface.
+    ctx.fillStyle = `rgba(224, 242, 254, ${0.16 + shimmer * 0.05})`;
     ctx.beginPath();
-    ctx.moveTo(x - halfWidth, centerY);
-    ctx.lineTo(x, bottom);
-    ctx.lineTo(x + r * 0.06, centerY + r * 0.12);
-    ctx.lineTo(x - r * 0.08, centerY - r * 0.08);
+    ctx.moveTo(x - corner, top);
+    ctx.lineTo(x + corner, top);
+    ctx.lineTo(x + r * 0.08, y + r * 0.08);
+    ctx.lineTo(x - r * 0.16, y - r * 0.02);
     ctx.closePath();
     ctx.fill();
 
-    ctx.strokeStyle = `rgba(224, 242, 254, ${0.82 + pulse * 0.12})`;
-    ctx.lineWidth = Math.max(2, Math.round(r * 0.08));
-    diamondPath();
-    ctx.stroke();
-
-    ctx.strokeStyle = "rgba(14, 165, 233, 0.72)";
-    ctx.lineWidth = Math.max(1, Math.round(r * 0.045));
-    diamondPath(0.82);
-    ctx.stroke();
-
-    // Crystal seams converge off-center so the shell does not look like a flat icon.
-    const coreX = x - r * 0.08;
-    const coreY = centerY + r * 0.08;
-    ctx.strokeStyle = "rgba(186, 230, 253, 0.54)";
+    // Short cracks suggest ice while leaving the enemy sprite readable.
+    ctx.strokeStyle = thawing ? "rgba(248, 250, 252, 0.9)" : "rgba(186, 230, 253, 0.62)";
+    ctx.lineWidth = Math.max(1, Math.round(r * 0.055));
     ctx.beginPath();
-    ctx.moveTo(coreX, coreY);
-    ctx.lineTo(x, top);
-    ctx.moveTo(coreX, coreY);
-    ctx.lineTo(x + halfWidth, centerY);
-    ctx.moveTo(coreX, coreY);
-    ctx.lineTo(x, bottom);
-    ctx.moveTo(coreX, coreY);
-    ctx.lineTo(x - halfWidth, centerY);
+    ctx.moveTo(x - r * 0.28, y - r * 0.3);
+    ctx.lineTo(x - r * 0.06, y - r * 0.06);
+    ctx.lineTo(x - r * 0.18, y + r * 0.18);
+    ctx.moveTo(x + r * 0.34, y - r * 0.12);
+    ctx.lineTo(x + r * 0.12, y + r * 0.08);
+    ctx.lineTo(x + r * 0.24, y + r * 0.3);
     ctx.stroke();
 
-    // The final moments brighten the angular cracks before the shell breaks.
-    ctx.strokeStyle = thawing ? "rgba(255, 255, 255, 0.96)" : "rgba(240, 249, 255, 0.62)";
-    ctx.lineWidth = thawing ? 2 : 1;
-    ctx.beginPath();
-    ctx.moveTo(x - r * 0.16, top + r * 0.28);
-    ctx.lineTo(x + r * 0.02, centerY - r * 0.28);
-    ctx.lineTo(x - r * 0.12, centerY - r * 0.02);
-    ctx.lineTo(x + r * 0.08, centerY + r * 0.18);
-    ctx.moveTo(x + halfWidth * 0.72, centerY);
-    ctx.lineTo(x + r * 0.34, centerY + r * 0.08);
-    ctx.lineTo(x + r * 0.18, centerY + r * 0.42);
-    ctx.stroke();
-
-    // Two asymmetric chips add life without repeating a screen-door pattern.
+    // Small asymmetric crystals match the game's chunky pixel language.
     ctx.fillStyle = "rgba(125, 211, 252, 0.78)";
-    ctx.beginPath();
-    ctx.moveTo(x - halfWidth * 0.88, centerY + r * 0.1);
-    ctx.lineTo(x - halfWidth * 1.12, centerY + r * 0.28);
-    ctx.lineTo(x - halfWidth * 0.78, centerY + r * 0.36);
-    ctx.closePath();
+    iceShard(x - r * 0.48, y + r * 0.34, r * 0.14, r * 0.3);
+    ctx.fill();
+    iceShard(x + r * 0.5, y + r * 0.26, r * 0.12, r * 0.24);
     ctx.fill();
 
-    ctx.fillStyle = "rgba(224, 242, 254, 0.86)";
-    ctx.beginPath();
-    ctx.moveTo(x + halfWidth * 0.5, centerY - r * 0.5);
-    ctx.lineTo(x + halfWidth * 0.68, centerY - r * 0.68);
-    ctx.lineTo(x + halfWidth * 0.74, centerY - r * 0.36);
-    ctx.closePath();
-    ctx.fill();
+    ctx.fillStyle = "rgba(240, 249, 255, 0.82)";
+    ctx.fillRect(Math.round(x - r * 0.34), Math.round(y - r * 0.46), pixel, pixel);
+    ctx.fillRect(Math.round(x + r * 0.28), Math.round(y + r * 0.38), pixel, pixel);
 
     ctx.restore();
   }
