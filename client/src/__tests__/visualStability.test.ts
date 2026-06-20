@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AnimatedSpriteRenderer, type AnimatedSpriteFrame } from "../systems/AnimatedSpriteRenderer";
 import { BACKGROUND_ECOLOGY } from "../utils/BackgroundEcologyConfig";
 import { CombatEffectRenderer } from "../utils/CombatEffectRenderer";
+import { ParticlePool } from "../utils/ParticlePool";
+import { WeaponSystem } from "../utils/WeaponSystem";
 
 interface ListenerCall {
   type: string;
@@ -128,6 +130,68 @@ describe("frozen enemy rendering", () => {
     expect(points.every(([, py]) => py >= 82 && py <= 116)).toBe(true);
     expect(closePath).toHaveBeenCalledTimes(4);
     expect(fillRect).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("special weapon effects", () => {
+  it("moves orbital drones on a seconds-based isometric orbit", () => {
+    const weapons = new WeaponSystem(new ParticlePool()) as unknown as {
+      getOrbitalPosition: (
+        player: { x: number; y: number },
+        currentTime: number,
+        index: number,
+        droneCount: number,
+        orbitRadius: number
+      ) => { x: number; y: number };
+    };
+    const player = { x: 100, y: 100 };
+    const start = weapons.getOrbitalPosition(player, 0, 0, 1, 50);
+    const quarterTurnMs = (Math.PI / 2 / 2.6) * 1000;
+    const quarter = weapons.getOrbitalPosition(player, quarterTurnMs, 0, 1, 50);
+
+    expect(start.x).toBeCloseTo(150, 4);
+    expect(start.y).toBeCloseTo(100, 4);
+    expect(quarter.x).toBeCloseTo(100, 4);
+    expect(quarter.y).toBeCloseTo(131, 4);
+  });
+
+  it("renders the guardian field as segmented 45-degree ellipses", () => {
+    const ellipse = vi.fn();
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      ellipse,
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      fillRect: vi.fn(),
+      imageSmoothingEnabled: true,
+      fillStyle: "",
+      strokeStyle: "",
+      lineWidth: 1,
+    } as unknown as CanvasRenderingContext2D;
+    const weapons = new WeaponSystem(new ParticlePool()) as unknown as {
+      renderGuardianField: (
+        player: { x: number; y: number },
+        weapon: { type: "field"; level: number; lastActivation: number },
+        context: CanvasRenderingContext2D,
+        currentTime: number
+      ) => void;
+    };
+
+    weapons.renderGuardianField(
+      { x: 100, y: 80 },
+      { type: "field", level: 1, lastActivation: 0 },
+      ctx,
+      1000
+    );
+
+    const ellipseCalls = ellipse.mock.calls as Array<[number, number, number, number]>;
+    expect(ellipseCalls.length).toBeGreaterThan(10);
+    expect(ellipseCalls.every(([, , rx, ry]) => Math.abs(ry / rx - 0.42) < 0.001)).toBe(true);
   });
 });
 

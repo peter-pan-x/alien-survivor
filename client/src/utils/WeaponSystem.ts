@@ -44,7 +44,7 @@ export class WeaponSystem {
           this.renderLightningChain(player, weapon, ctx, currentTime);
           break;
         case 'field':
-          this.renderGuardianField(player, weapon, ctx);
+          this.renderGuardianField(player, weapon, ctx, currentTime);
           break;
       }
     }
@@ -65,9 +65,13 @@ export class WeaponSystem {
 
     // 计算每个无人机的位置并检测碰撞
     for (let i = 0; i < droneCount; i++) {
-      const angle = (currentTime * config.ROTATION_SPEED) + (i * Math.PI * 2 / droneCount);
-      const droneX = player.x + Math.cos(angle) * orbitRadius;
-      const droneY = player.y + Math.sin(angle) * orbitRadius;
+      const { x: droneX, y: droneY } = this.getOrbitalPosition(
+        player,
+        currentTime,
+        i,
+        droneCount,
+        orbitRadius
+      );
 
       // 检测与敌人的碰撞（优化：使用平方距离判定）
       for (const enemy of enemies) {
@@ -101,31 +105,108 @@ export class WeaponSystem {
     const droneCount = weapon.level;
     const orbitRadius = config.ORBIT_RADIUS;
     const droneRadius = config.DRONE_RADIUS;
+    const orbitYRadius = orbitRadius * 0.62;
 
     ctx.save();
+    ctx.imageSmoothingEnabled = false;
+
+    // Broken elliptical rail anchors the drones to the 45-degree ground plane.
+    ctx.beginPath();
+    ctx.ellipse(player.x, player.y + 2, orbitRadius, orbitYRadius, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(6, 182, 212, 0.16)";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.save();
+    ctx.setLineDash([7, 9]);
+    ctx.lineDashOffset = -(currentTime * 0.018);
+    ctx.beginPath();
+    ctx.ellipse(player.x, player.y + 2, orbitRadius, orbitYRadius, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(103, 232, 249, 0.56)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
 
     for (let i = 0; i < droneCount; i++) {
-      const angle = (currentTime * config.ROTATION_SPEED) + (i * Math.PI * 2 / droneCount);
-      const droneX = player.x + Math.cos(angle) * orbitRadius;
-      const droneY = player.y + Math.sin(angle) * orbitRadius;
-
-      // 绘制无人机
-      const gradient = ctx.createRadialGradient(droneX, droneY, 0, droneX, droneY, droneRadius);
-      gradient.addColorStop(0, GAME_CONFIG.COLORS.WEAPON_ORBITAL);
-      gradient.addColorStop(1, GAME_CONFIG.COLORS.WEAPON_ORBITAL + '66');
-
-      ctx.beginPath();
-      ctx.arc(droneX, droneY, droneRadius, 0, Math.PI * 2);
-      ctx.fillStyle = gradient;
-      ctx.fill();
-
-      // 绘制光晕
-      ctx.beginPath();
-      ctx.arc(droneX, droneY, droneRadius + 3, 0, Math.PI * 2);
-      ctx.strokeStyle = GAME_CONFIG.COLORS.WEAPON_ORBITAL + '44';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      const angle = this.getOrbitalAngle(currentTime, i, droneCount);
+      const { x: droneX, y: droneY } = this.getOrbitalPosition(
+        player,
+        currentTime,
+        i,
+        droneCount,
+        orbitRadius
+      );
+      this.drawPixelDrone(ctx, droneX, droneY, angle, droneRadius, currentTime, i);
     }
+
+    ctx.restore();
+  }
+
+  private getOrbitalAngle(currentTime: number, index: number, droneCount: number): number {
+    const rotation = (currentTime / 1000) * GAME_CONFIG.WEAPONS.ORBITAL.ROTATION_SPEED;
+    return rotation + (index * Math.PI * 2) / Math.max(1, droneCount);
+  }
+
+  private getOrbitalPosition(
+    player: Player,
+    currentTime: number,
+    index: number,
+    droneCount: number,
+    orbitRadius: number
+  ): { x: number; y: number } {
+    const angle = this.getOrbitalAngle(currentTime, index, droneCount);
+    return {
+      x: player.x + Math.cos(angle) * orbitRadius,
+      y: player.y + Math.sin(angle) * orbitRadius * 0.62,
+    };
+  }
+
+  private drawPixelDrone(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    angle: number,
+    radius: number,
+    currentTime: number,
+    index: number
+  ): void {
+    const pixel = Math.max(2, Math.round(radius * 0.3));
+    const flap = Math.floor(currentTime / 110 + index) % 2;
+    const depth = (Math.sin(angle) + 1) * 0.5;
+    const lift = 3 + depth * 2;
+    const px = Math.round(x);
+    const py = Math.round(y - lift);
+
+    ctx.save();
+    ctx.globalAlpha = 0.64 + depth * 0.36;
+
+    ctx.fillStyle = "rgba(0, 8, 16, 0.5)";
+    ctx.beginPath();
+    ctx.ellipse(px, Math.round(y + 2), radius * 0.82, radius * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Thruster pixels trail opposite the orbit tangent.
+    const trailX = Math.round(-Math.cos(angle) * pixel * 2);
+    const trailY = Math.round(-Math.sin(angle) * pixel);
+    ctx.fillStyle = flap ? "#67e8f9" : "#0891b2";
+    ctx.fillRect(px + trailX - pixel / 2, py + trailY, pixel, pixel);
+    ctx.fillStyle = "rgba(34, 211, 238, 0.42)";
+    ctx.fillRect(px + trailX * 1.5 - pixel / 2, py + trailY * 1.5, pixel, pixel);
+
+    // Dark chassis, animated stabilizer wings, cyan reactor and white glint.
+    ctx.fillStyle = "#06141e";
+    ctx.fillRect(px - pixel * 2, py - pixel, pixel * 4, pixel * 3);
+    ctx.fillRect(px - pixel * 3, py + (flap ? 0 : pixel), pixel, pixel);
+    ctx.fillRect(px + pixel * 2, py + (flap ? 0 : pixel), pixel, pixel);
+
+    ctx.fillStyle = "#155e75";
+    ctx.fillRect(px - pixel, py - pixel * 2, pixel * 2, pixel);
+    ctx.fillRect(px - pixel * 2, py, pixel * 4, pixel);
+
+    ctx.fillStyle = "#22d3ee";
+    ctx.fillRect(px - pixel, py - pixel, pixel * 2, pixel * 2);
+    ctx.fillStyle = "#ecfeff";
+    ctx.fillRect(px, py - pixel, pixel, pixel);
 
     ctx.restore();
   }
@@ -206,17 +287,19 @@ export class WeaponSystem {
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i];
       const b = points[i + 1];
-      this.drawJitteredLightning(ctx, a.x, a.y, b.x, b.y, amplitude, alpha);
+      this.drawJitteredLightning(ctx, a.x, a.y, b.x, b.y, amplitude, alpha, currentTime);
 
-      // 在目标位置绘制小型冲击光晕（无shadowBlur，性能优化）
+      // Angular impact diamonds match the frozen and force-field effects.
       ctx.beginPath();
-      ctx.arc(b.x, b.y, 8, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(168,85,247,${0.3 * alpha})`;
+      ctx.moveTo(b.x, b.y - 8);
+      ctx.lineTo(b.x + 8, b.y);
+      ctx.lineTo(b.x, b.y + 5);
+      ctx.lineTo(b.x - 8, b.y);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(168,85,247,${0.46 * alpha})`;
       ctx.fill();
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(255,255,255,${0.8 * alpha})`;
-      ctx.fill();
+      ctx.fillRect(Math.round(b.x - 2), Math.round(b.y - 2), 4, 4);
     }
 
     ctx.restore();
@@ -229,7 +312,8 @@ export class WeaponSystem {
     x2: number,
     y2: number,
     amplitude: number,
-    alpha: number
+    alpha: number,
+    currentTime: number
   ): void {
     const dx = x2 - x1;
     const dy = y2 - y1;
@@ -246,8 +330,12 @@ export class WeaponSystem {
       const py = y1 + dy * t;
       // 在中段抖动更强，两端更弱
       const falloff = Math.sin(Math.PI * t);
-      const jitter = amplitude * falloff * (Math.random() * 2 - 1);
-      points.push({ x: px + nx * jitter, y: py + ny * jitter });
+      const noise = Math.sin(i * 12.73 + currentTime * 0.032 + x1 * 0.11 + y1 * 0.07);
+      const jitter = amplitude * falloff * noise;
+      points.push({
+        x: Math.round(px + nx * jitter),
+        y: Math.round(py + ny * jitter),
+      });
     }
 
     // 优化：移除 shadowBlur（性能杀手），改用多层描边模拟发光
@@ -345,45 +433,70 @@ export class WeaponSystem {
   private renderGuardianField(
     player: Player,
     weapon: ActiveWeapon,
-    ctx: CanvasRenderingContext2D
+    ctx: CanvasRenderingContext2D,
+    currentTime: number
   ): void {
     const config = GAME_CONFIG.WEAPONS.FIELD;
     const fieldRadius = config.FIELD_RADIUS + (weapon.level - 1) * 10;
+    const verticalRadius = fieldRadius * 0.42;
+    const time = currentTime / 1000;
+    const pulse = (Math.sin(time * 5.4) + 1) * 0.5;
 
     ctx.save();
+    ctx.imageSmoothingEnabled = false;
 
-    // 绘制力场环
-    const gradient = ctx.createRadialGradient(
-      player.x,
-      player.y,
-      fieldRadius - 10,
-      player.x,
-      player.y,
-      fieldRadius
-    );
-    gradient.addColorStop(0, GAME_CONFIG.COLORS.WEAPON_FIELD + '00');
-    gradient.addColorStop(0.5, GAME_CONFIG.COLORS.WEAPON_FIELD + '44');
-    gradient.addColorStop(1, GAME_CONFIG.COLORS.WEAPON_FIELD + '88');
-
+    // Low translucent plate makes the field read as energy on the ground.
     ctx.beginPath();
-    ctx.arc(player.x, player.y, fieldRadius, 0, Math.PI * 2);
-    ctx.strokeStyle = gradient;
-    ctx.lineWidth = 5;
+    ctx.ellipse(player.x, player.y + 3, fieldRadius, verticalRadius, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(16, 185, 129, ${0.035 + pulse * 0.025})`;
+    ctx.fill();
+
+    // Counter-rotating segmented rails replace the generic gradient circle.
+    const segmentCount = 14;
+    for (let i = 0; i < segmentCount; i++) {
+      const start = (i / segmentCount) * Math.PI * 2 + time * 0.42;
+      const end = start + Math.PI * 2 / segmentCount * 0.58;
+      ctx.beginPath();
+      ctx.ellipse(player.x, player.y + 3, fieldRadius, verticalRadius, 0, start, end);
+      ctx.strokeStyle = i % 2 === 0
+        ? `rgba(52, 211, 153, ${0.58 + pulse * 0.2})`
+        : `rgba(103, 232, 249, ${0.34 + pulse * 0.14})`;
+      ctx.lineWidth = i % 2 === 0 ? 3 : 2;
+      ctx.stroke();
+    }
+
+    const innerRadius = fieldRadius - 8 - pulse * 2;
+    ctx.beginPath();
+    ctx.ellipse(player.x, player.y + 3, innerRadius, innerRadius * 0.42, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(5, 150, 105, 0.34)";
+    ctx.lineWidth = 1;
     ctx.stroke();
 
-    // 绘制旋转的能量点
-    const time = Date.now() * 0.002;
-    const pointCount = 8;
-    for (let i = 0; i < pointCount; i++) {
-      const angle = (i / pointCount) * Math.PI * 2 + time;
-      const pointX = player.x + Math.cos(angle) * fieldRadius;
-      const pointY = player.y + Math.sin(angle) * fieldRadius;
+    // Six counter-rotating diamond emitters make the field feel engineered.
+    const nodeCount = 6;
+    for (let i = 0; i < nodeCount; i++) {
+      const angle = (i / nodeCount) * Math.PI * 2 - time * 0.9;
+      const pointX = player.x + Math.cos(angle) * innerRadius;
+      const pointY = player.y + 3 + Math.sin(angle) * innerRadius * 0.42;
+      const size = i % 2 === 0 ? 4 : 3;
 
       ctx.beginPath();
-      ctx.arc(pointX, pointY, 3, 0, Math.PI * 2);
-      ctx.fillStyle = GAME_CONFIG.COLORS.WEAPON_FIELD;
+      ctx.moveTo(pointX, pointY - size);
+      ctx.lineTo(pointX + size, pointY);
+      ctx.lineTo(pointX, pointY + size);
+      ctx.lineTo(pointX - size, pointY);
+      ctx.closePath();
+      ctx.fillStyle = i % 2 === 0 ? "#6ee7b7" : "#67e8f9";
       ctx.fill();
     }
+
+    // Brief cardinal ticks communicate the active knockback boundary.
+    ctx.fillStyle = `rgba(236, 253, 245, ${0.56 + pulse * 0.28})`;
+    const tick = 3;
+    ctx.fillRect(Math.round(player.x - tick), Math.round(player.y + 3 - verticalRadius), tick * 2, 2);
+    ctx.fillRect(Math.round(player.x - tick), Math.round(player.y + 2 + verticalRadius), tick * 2, 2);
+    ctx.fillRect(Math.round(player.x - fieldRadius), Math.round(player.y + 2), 2, tick * 2);
+    ctx.fillRect(Math.round(player.x + fieldRadius - 2), Math.round(player.y + 2), 2, tick * 2);
 
     ctx.restore();
   }
@@ -404,4 +517,3 @@ export class WeaponSystem {
     }
   }
 }
-

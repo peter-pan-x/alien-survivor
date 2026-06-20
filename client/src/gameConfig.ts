@@ -205,7 +205,7 @@ export const GAME_CONFIG = {
   WEAPONS: {
     ORBITAL: {
       BASE_DAMAGE: 8,
-      ROTATION_SPEED: 0.05,
+      ROTATION_SPEED: 2.6, // radians per second
       ORBIT_RADIUS: 50,
       DRONE_RADIUS: 8,
     },
